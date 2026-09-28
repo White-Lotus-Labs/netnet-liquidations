@@ -1,0 +1,9 @@
+# Install Vite and TypeScript even when Railway sets NODE_ENV=production.
+# Those packages are devDependencies, and `npm ci` would otherwise skip them.
+
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+NPM_CONFIG_PRODUCTION = "false"
+
+[phases.install]
+cmds = ["npm ci --include=dev"]

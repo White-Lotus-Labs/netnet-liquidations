@@ -1,0 +1,14 @@
+# Nixpacks is pinned so a Dockerfile added later does not replace this build.
+# Vite reads VITE_* and ZEROX_API_KEY at build time. Set them on the service
+# before the first deploy, then redeploy after any change.
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "node server.mjs"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

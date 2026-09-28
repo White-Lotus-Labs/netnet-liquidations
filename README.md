@@ -21,7 +21,10 @@ Dev server: [http://127.0.0.1:4317](http://127.0.0.1:4317)
 npm test
 npm run build
 npm run preview
+npm start
 ```
+
+`npm start` serves `dist/` on `PORT` (default `8080`), including `/health`. Build first.
 
 Copy `.env.example` to `.env` if you want a different RPC or poll interval. Defaults work without a key.
 
@@ -98,3 +101,44 @@ Sizes quoted each refresh: 1, 5, 15, 40, 80, 150, 300, and 600 NET, plus the sce
 | `src/seed/stressDesk.ts` | 18:02 Warsaw snapshot used for first paint. |
 | `seed/` | The stress note and JSON that snapshot was taken from. |
 | `src/mock/sampleDesk.ts` | Frozen illustration kept for tests. |
+| `server.mjs` | Production static server. Reads `PORT`, serves `dist/`, SPA fallback, `/health`. |
+| `railway.toml` | Nixpacks build, start command, healthcheck. |
+| `nixpacks.toml` | Installs devDependencies so `vite` and `tsc` exist when `NODE_ENV=production`. |
+
+## Deploy on Railway
+
+Service name: `netnet-liq-dashboard`.
+
+The public defaults work with no secrets: Robinhood Chain RPC, Morpho GraphQL, and KyberSwap quotes. Optional variables are baked into the client at **build** time. Set them on the service before the deploy that should pick them up, then redeploy after any change. Railway’s runtime env does not rewrite the bundle.
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `VITE_RPC_URL` | no | Public Robinhood RPC if unset |
+| `VITE_MORPHO_GRAPHQL` | no | `https://api.morpho.org/graphql` if unset |
+| `VITE_POLL_SECONDS` | no | `45` if unset |
+| `ZEROX_API_KEY` or `VITE_ZEROX_API_KEY` | no | Referrer-restricted 0x key. Inlined into the JS. Do not commit it. |
+| `PORT` | set by Railway | `server.mjs` binds `0.0.0.0:$PORT`. Do not hardcode it. |
+
+From the Railway dashboard, with this repo linked:
+
+1. New project, empty service named `netnet-liq-dashboard`.
+2. Connect the GitHub / Git remote and deploy `main`.
+3. Builder is Nixpacks via `railway.toml`. Install uses `npm ci --include=dev`, then `npm run build`. Start command is `node server.mjs`.
+4. Healthcheck path is `/health` (plain `ok`).
+5. Generate a public domain on the service. Railway sends traffic to `PORT`.
+
+CLI equivalent, from a machine that is already signed in (`railway login` or `RAILWAY_TOKEN`):
+
+```bash
+railway init --name netnet-liq-dashboard
+railway up --service netnet-liq-dashboard --detach -m "Serve the Loopback buy-zone desk"
+railway domain --service netnet-liq-dashboard
+```
+
+Local check of the same server:
+
+```bash
+npm run build
+PORT=4391 node server.mjs
+curl -fsS http://127.0.0.1:4391/health
+```
