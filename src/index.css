@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --color-desk: #08090c;
+  --color-panel: #10141c;
+  --color-panel-2: #171d28;
+  --color-line: #2a3344;
+  --color-ink: #e7edf6;
+  --color-muted: #93a0b3;
+  --color-faint: #667386;
+  --color-amber: #e6b35a;
+  --color-amber-dim: #a8843d;
+  --color-cyan: #7fd1c7;
+  --color-rose: #e07a86;
+  --color-mint: #8fceab;
+  --color-blue: #93b4ea;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  background:
+    radial-gradient(900px 420px at 80% -10%, rgba(127, 209, 199, 0.06), transparent 55%),
+    radial-gradient(800px 380px at 0% 0%, rgba(230, 179, 90, 0.07), transparent 50%),
+    var(--color-desk);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+@keyframes lamp {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.lamp {
+  animation: lamp 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lamp {
+    animation: none;
+  }
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
