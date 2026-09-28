@@ -38,6 +38,12 @@ export const LINKS = {
 export const RPC_URL = envString('VITE_RPC_URL', 'https://rpc.mainnet.chain.robinhood.com')
 export const MORPHO_GRAPHQL = envString('VITE_MORPHO_GRAPHQL', 'https://api.morpho.org/graphql')
 
+/** Public KyberSwap aggregator on Robinhood Chain. No key. */
+export const KYBER_ROUTES = 'https://aggregator-api.kyberswap.com/robinhood/api/v1/routes'
+
+/** 0x Swap API indicative price. Used only when ZEROX_API_KEY is set. */
+export const ZEROX_PRICE = 'https://api.0x.org/swap/allowance-holder/price'
+
 export const POLL_MS = (() => {
   const seconds = Number(envString('VITE_POLL_SECONDS', '45'))
   if (!Number.isFinite(seconds)) return 45_000

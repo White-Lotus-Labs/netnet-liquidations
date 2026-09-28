@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { Desk } from '../types.ts'
-import { buyBand, priceSpanLabel } from '../lib/buyZone.ts'
+import { priceSpanLabel } from '../lib/buyZone.ts'
 import { formatNet, formatPercentWad, formatUsdg, formatWad, formatWsNet, cx } from '../lib/format.ts'
 import {
   SCENARIO_ORDER,
@@ -9,6 +9,7 @@ import {
   type EnrichedPosition,
   type ScenarioId,
 } from '../lib/model.ts'
+import { buildImpactView, chartQuotes, fillLabel, routerMultiple, type QuoteBook } from '../lib/quoteBook.ts'
 import { WAD } from '../lib/units.ts'
 import { ImpactChart } from './ImpactChart.tsx'
 
@@ -19,6 +20,7 @@ export function CascadePanel({
   onScenario,
   customInput,
   onCustom,
+  book,
 }: {
   desk: Desk
   rows: EnrichedPosition[]
@@ -26,6 +28,7 @@ export function CascadePanel({
   onScenario: (id: ScenarioId) => void
   customInput: string
   onCustom: (value: string) => void
+  book: QuoteBook | null
 }) {
   const customDebt = parseDebt(customInput)
   const model = useMemo(
@@ -39,17 +42,36 @@ export function CascadePanel({
     }
     return map
   }, [desk, rows, customDebt])
-  const band = buyBand(model)
+  const impact = useMemo(() => buildImpactView(model, book), [model, book])
   const move =
     model.moveBps === null ? null : formatPercentWad((model.moveBps * WAD) / 10_000n, 1)
+  const curveMax = model.curve.length > 0 ? model.curve[model.curve.length - 1]?.netRaw ?? null : model.markerNetRaw
+  const agg = chartQuotes(book?.points ?? [], curveMax).map((point) => ({
+    netRaw: point.netRaw,
+    priceWad: point.avgPriceWad,
+  }))
+  const multiple = routerMultiple(impact.routerUsdgOut, impact.canonicalUsdgOut)
 
   return (
     <section aria-label="Cascade and price impact" className="rounded-md border border-line bg-panel">
       <div className="border-b border-line px-3 py-2.5">
         <h2 className="text-[11px] uppercase tracking-[0.16em] text-faint">Cascade / price impact</h2>
-        <p className="mt-1 text-sm text-muted">
-          Seized wsNET at the 62.5% line is about 70.4% of collateral (LLTV × 12.7% incentive). Already-liquidatable names can lose up to 100%.
+        <p className="mt-1 text-sm text-muted" data-testid="quote-status">
+          {book?.status === 'loading'
+            ? 'Quoting router depth…'
+            : impact.source === 'aggregator'
+              ? `Impact via router/aggregator (Matcha-style) · ${impact.providerLabel}`
+              : 'Canonical Uniswap v2 only'}
         </p>
+        <p className="mt-1 text-sm text-muted">
+          Seized wsNET at the 62.5% line is about 70.4% of collateral (LLTV × 12.7% incentive). Already-liquidatable names can lose up to 100%. The mint curve is average router fill. The dashed curve is the canonical pair’s price after the same sale.
+        </p>
+        {impact.alert ? (
+          <p className="mt-2 rounded border border-rose/50 bg-rose/10 px-2 py-1.5 text-xs text-rose" data-testid="impact-warning">
+            {impact.alert}
+          </p>
+        ) : null}
+        {impact.note ? <p className="mt-2 text-xs text-amber">{impact.note}</p> : null}
       </div>
       <div className="flex flex-wrap gap-1.5 px-3 pt-3">
         {SCENARIO_ORDER.map((id) => (
@@ -82,9 +104,23 @@ export function CascadePanel({
         <Stat label="Debt in bucket" value={formatUsdg(model.debtRaw, 0)} />
         <Stat label="Seized wsNET" value={formatWsNet(model.seizedWsRaw, 2)} />
         <Stat label="NET sold" value={formatNet(model.flowNetRaw, 2)} />
-        <Stat label="USDG out" value={formatUsdg(model.usdgOutRaw, 0)} />
         <Stat
-          label="Spot if sold today"
+          label="Router USDG out"
+          value={formatUsdg(impact.routerUsdgOut, 0)}
+          hint={multiple ? `${multiple} the pair` : undefined}
+        />
+        <Stat
+          label="Router avg fill"
+          value={
+            impact.routerTouch === null || impact.routerAvg === null
+              ? '—'
+              : `${formatWad(impact.routerTouch, 2)} → ${formatWad(impact.routerAvg, 2)}`
+          }
+          hint={impact.routerExact ? 'Live quote' : impact.routerAvg ? 'Interpolated' : undefined}
+        />
+        <Stat label="Canonical USDG out" value={formatUsdg(model.usdgOutRaw, 0)} />
+        <Stat
+          label="Canonical pool only"
           value={
             model.spotBeforeWad === null || model.spotAfterWad === null
               ? '—'
@@ -98,22 +134,39 @@ export function CascadePanel({
           hint={model.triggerKind === 'liquidatable' ? 'Already through' : undefined}
         />
       </dl>
+      {impact.fills.length > 0 ? (
+        <ul className="mt-3 flex flex-wrap gap-1.5 px-3" data-testid="route-fills">
+          {impact.fills.map((fill) => (
+            <li key={`${fill.source}-${fill.pool ?? 'none'}`} className="rounded border border-line px-2 py-0.5 text-[11px] text-muted">
+              {fillLabel(fill)} <span className="num text-ink">{(fill.shareBps / 100).toFixed(1)}%</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="px-2 pb-3 pt-2">
         <ImpactChart
           curve={model.curve}
+          agg={agg}
+          aggLabel={impact.source === 'aggregator' ? impact.providerLabel : 'Router average fill'}
           markerNetRaw={model.markerNetRaw}
           spotWad={desk.spotWad}
           twapWad={desk.twapWad}
           navWad={desk.navWad}
           pauseWad={desk.pauseSpotWad}
-          bandLow={band.low}
-          bandHigh={band.high}
+          bandLow={impact.bandLow}
+          bandHigh={impact.bandHigh}
         />
       </div>
-      {model.repricedAfterWad !== null && model.referenceSpotWad !== null ? (
+      {impact.source === 'canonical' && model.repricedAfterWad !== null && model.referenceSpotWad !== null ? (
         <p className="px-3 pb-3 text-xs leading-relaxed text-muted">
-          If the pool first reconverges to the top trigger ({formatWad(model.referenceSpotWad, 2)}), the same NET sale lands near{' '}
-          <span className="num text-amber">{formatWad(model.repricedAfterWad, 2)}</span>. That range is the shaded buy zone. The blue curve is today’s book.
+          If the canonical pool first reconverges to the top trigger ({formatWad(model.referenceSpotWad, 2)}), the same NET sale lands near{' '}
+          <span className="num text-amber">{formatWad(model.repricedAfterWad, 2)}</span>. That range is the shaded band while router quotes are down.
+        </p>
+      ) : null}
+      {impact.source === 'aggregator' && impact.bandLow !== null ? (
+        <p className="px-3 pb-3 text-xs leading-relaxed text-muted">
+          Shaded band is the router walk from a small clip ({formatWad(impact.routerTouch, 2)}) to the tail of this size (
+          {formatWad(impact.routerMarginal, 2)}). Mint line is average fill versus size. Dashed line is the canonical pair only.
         </p>
       ) : null}
     </section>

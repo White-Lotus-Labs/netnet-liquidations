@@ -1,12 +1,20 @@
 import type { Desk } from '../types.ts'
 import { formatNet, formatPercentWad, formatUsdg, formatWad, wadToNumber } from './format.ts'
 import type { ScenarioModel } from './model.ts'
+import {
+  buildImpactView,
+  fillsSummary,
+  routerMultiple,
+  type ImpactView,
+  type QuoteBook,
+} from './quoteBook.ts'
 import { WAD } from './units.ts'
 
 export type BuyCopy = {
   headline: string
   detail: string
   caveats: string[]
+  alert: string | null
 }
 
 function price(wad: bigint | null): string {
@@ -17,11 +25,13 @@ export function describeBuyZone(args: {
   label: string
   model: ScenarioModel
   desk: Desk
+  book: QuoteBook | null
   facilityMultiple: number | null
   runwayDays: number | null
 }): BuyCopy {
   const { label, model, desk } = args
-  const caveats = baseCaveats(args)
+  const impact = buildImpactView(model, args.book)
+  const caveats = baseCaveats(args, impact)
   const count = model.slices.length
 
   if (count === 0) {
@@ -30,14 +40,16 @@ export function describeBuyZone(args: {
       detail:
         'Pick a wider health band or a custom USDG notional. Names with no readable health are left out of every bucket.',
       caveats,
+      alert: null,
     }
   }
 
   if (model.debtRaw < 100n * 1_000_000n) {
     return {
-      headline: `Debt in “${label}” is only ${formatUsdg(model.debtRaw, 0)} USDG. That is too small to be a meaningful print in the NET/USDG pool.`,
-      detail: `${count} position${count === 1 ? '' : 's'} match the filter. The pool’s USDG side is ${formatUsdg(desk.reserveUsdg, 0)}.`,
+      headline: `Debt in “${label}” is only ${formatUsdg(model.debtRaw, 0)} USDG. That is too small to be a meaningful print.`,
+      detail: `${count} position${count === 1 ? '' : 's'} match the filter. Canonical pool USDG is ${formatUsdg(desk.reserveUsdg, 0)}.`,
       caveats,
+      alert: null,
     }
   }
 
@@ -46,29 +58,33 @@ export function describeBuyZone(args: {
       headline: `“${label}” is not a spot buy zone. These ${count} positions stay solvent down to the NAV floor.`,
       detail: `They margin-call only if NAV reaches about ${price(model.triggerLowWad)}–${price(model.triggerHighWad)} USDG per NET, or if the dividend index and borrow interest do the work. A spot crash does not mark them down while the floor is binding.`,
       caveats,
+      alert: null,
     }
   }
 
   if (model.triggerKind === 'liquidatable') {
     const paused = desk.liquidationsEnabled === false
-    const span = `${price(model.spotAfterWad)}–${price(model.spotBeforeWad)}`
+    const span = priceSpanLabel(impact.bandLow, impact.bandHigh)
+    const where = impact.source === 'aggregator' ? 'on router depth' : 'in the canonical pool'
     return {
       headline: paused
-        ? `These positions are already through the credited-value line, but the oracle is not accepting liquidations. The print ${span} USDG/NET is what the pool would do after price() works again.`
-        : `Forced supply can print now, around ${span} USDG/NET, if ${formatUsdg(model.debtRaw, 0)} USDG of debt is liquidated.`,
-      detail: saleDetail(model, 'current'),
+        ? `These positions are already through the credited-value line, but the oracle is not accepting liquidations. The print ${span} USDG/NET is what ${where} would do after price() works again.`
+        : `Forced supply can print now, around ${span} USDG/NET ${where}, if ${formatUsdg(model.debtRaw, 0)} USDG of debt is liquidated.`,
+      detail: saleDetail(model, impact, 'current'),
       caveats,
+      alert: impact.alert,
     }
   }
 
   const upper = model.triggerHighWad
-  const lower = model.repricedAfterWad ?? model.spotAfterWad
   const spread =
     upper !== null && model.triggerLowWad !== null && upper > 0n
       ? Number((upper - model.triggerLowWad) * 10_000n / upper) / 100
       : 0
 
-  const headline = `Nearest meaningful forced supply prints around ${price(lower)}–${price(upper)} USDG/NET if ${formatUsdg(model.debtRaw, 0)} USDG of debt liquidates.`
+  const span = priceSpanLabel(impact.bandLow, impact.bandHigh)
+  const via = impact.source === 'aggregator' ? 'on router depth' : 'in the canonical pool'
+  const headline = `Nearest meaningful forced supply prints around ${span} USDG/NET ${via} if ${formatUsdg(model.debtRaw, 0)} USDG of debt liquidates.`
 
   const stair =
     spread > 8
@@ -77,38 +93,62 @@ export function describeBuyZone(args: {
 
   return {
     headline,
-    detail: `${saleDetail(model, 'trigger')}${stair}`,
+    detail: `${saleDetail(model, impact, 'trigger')}${stair}`,
     caveats,
+    alert: impact.alert,
   }
 }
 
-function saleDetail(model: ScenarioModel, path: 'current' | 'trigger'): string {
+function saleDetail(model: ScenarioModel, impact: ImpactView, path: 'current' | 'trigger'): string {
   const count = model.slices.length
   const net = formatNet(model.flowNetRaw ?? model.seizedNetRaw, 2)
   const debt = formatUsdg(model.debtRaw, 0)
+  const names = `${count} position${count === 1 ? '' : 's'}, ${debt} USDG of debt, about ${net} NET at the current sNET index.`
+
+  if (impact.source === 'aggregator') {
+    const multiple = routerMultiple(impact.routerUsdgOut, impact.canonicalUsdgOut)
+    const compare =
+      impact.canonicalBefore !== null && impact.canonicalAfter !== null
+        ? ` Canonical Uniswap v2 alone would pay ${formatUsdg(impact.canonicalUsdgOut, 0)} USDG and walk its own spot from ${price(impact.canonicalBefore)} to ${price(impact.canonicalAfter)}.`
+        : ''
+    const times = multiple ? ` Router USDG is ${multiple} the pair’s USDG.` : ''
+    const route = impact.fills.length > 0 ? ` Best route: ${fillsSummary(impact.fills)}.` : ''
+    const exact = impact.routerExact
+      ? ''
+      : ' This size sits between live rungs, so USDG out is interpolated.'
+    const clock =
+      path === 'trigger'
+        ? ` Quotes are today’s router book. The trigger TWAP is ${price(model.triggerHighWad)} USDG/NET; the curve shifts if TWAP grinds there before the sale.`
+        : ''
+    return `${names} ${impact.providerLabel} pays ${formatUsdg(impact.routerUsdgOut, 0)} USDG, average ${price(impact.routerAvg)} USDG/NET. A 1 NET clip clears near ${price(impact.routerTouch)}; the tail of this size prints near ${price(impact.routerMarginal)}.${compare}${times}${route}${exact}${clock}`
+  }
+
   const today =
     model.spotBeforeWad !== null && model.spotAfterWad !== null
-      ? ` Sold into today’s reserves, that NET moves spot from ${price(model.spotBeforeWad)} to ${price(model.spotAfterWad)} USDG/NET (${formatPercentWad(model.moveBps === null ? null : (model.moveBps * WAD) / 10_000n, 1)}).`
+      ? ` Sold into today’s canonical reserves, that NET moves spot from ${price(model.spotBeforeWad)} to ${price(model.spotAfterWad)} USDG/NET (${formatPercentWad(model.moveBps === null ? null : (model.moveBps * WAD) / 10_000n, 1)}).`
       : ''
 
   if (path === 'current') {
-    return `${count} position${count === 1 ? '' : 's'}, ${debt} USDG of debt. Estimated seized collateral converts to about ${net} NET at the current sNET index, then sells into the canonical pair.${today}`
+    return `${names} The sale is modeled on the canonical pair only.${today}`
   }
 
   const reconverged =
     model.referenceSpotWad !== null && model.repricedAfterWad !== null
-      ? ` The band assumes the pool has reconverged to the first trigger, TWAP ${price(model.referenceSpotWad)}, before the sale — the divergence guard blocks liquidations if spot is more than 15% under TWAP. Selling about ${net} NET from there lands near ${price(model.repricedAfterWad)}.`
-      : ` Estimated sale is about ${net} NET.`
+      ? ` The band assumes the canonical pool has reconverged to the first trigger, TWAP ${price(model.referenceSpotWad)}, before the sale. The divergence guard blocks liquidations if spot is more than 15% under TWAP. Selling about ${net} NET from there lands near ${price(model.repricedAfterWad)}.`
+      : ''
 
-  return `${count} position${count === 1 ? '' : 's'} in this bucket.${reconverged}${today} The blue curve is today’s pool. The shaded band is the reconverged sale.`
+  return `${names}${reconverged}${today} The dashed curve is today’s canonical pool. The shaded band is that pool’s reconverged sale.`
 }
 
-function baseCaveats(args: {
-  model: ScenarioModel
-  desk: Desk
-  facilityMultiple: number | null
-  runwayDays: number | null
-}): string[] {
+function baseCaveats(
+  args: {
+    model: ScenarioModel
+    desk: Desk
+    facilityMultiple: number | null
+    runwayDays: number | null
+  },
+  impact: ImpactView,
+): string[] {
   const { model, desk, facilityMultiple, runwayDays } = args
   const caveats: string[] = []
 
@@ -142,13 +182,22 @@ function baseCaveats(args: {
   caveats.push(
     'Unwrap assumption: 1 wsNET becomes index/1e9 NET, because that is the multiplier LoopbackOracle applies to TWAP and NAV. A liquidator who does not unwrap, or who sells in pieces, will not hit this print.',
   )
-  caveats.push(
-    'Pair fee in the curve is 0.30%. NetNet docs also describe a 5% Treasury fee on official margin-call sales. That fee is not deducted here — if the seller must pay it, USDG received is worse than this curve.',
-  )
+  if (impact.source === 'aggregator') {
+    caveats.push(
+      `${impact.providerLabel} quotes are indicative token-out, before gas. They split across venues (Uniswap v2, v3, v4, and other pools KyberSwap indexes on Robinhood Chain). A liquidator can still choose a worse route.`,
+    )
+    caveats.push(
+      'The dashed curve is the canonical pair only, with its 0.30% fee. Router quotes already include the fees on the route they picked. A 5% Treasury fee on official margin-call sales is not deducted on either number.',
+    )
+  } else {
+    caveats.push(
+      'Pair fee in the canonical curve is 0.30%. NetNet docs also describe a 5% Treasury fee on official margin-call sales. That fee is not deducted here.',
+    )
+  }
 
   if (facilityMultiple !== null && facilityMultiple > 1) {
     caveats.push(
-      `Book borrow is ${facilityMultiple.toFixed(1)}× the docs’ guidance of 10% of pool USDG depth. Expect smaller tranches and a slower unwind than a single dump of the whole bucket.`,
+      `Book borrow is ${facilityMultiple.toFixed(1)}× the docs’ guidance of 10% of canonical-pool USDG depth. That guide is the pair, not router depth. Expect smaller tranches than one dump of the whole bucket.`,
     )
   }
 
@@ -169,26 +218,6 @@ function baseCaveats(args: {
   }
 
   return caveats
-}
-
-export function buyBand(model: {
-  triggerKind: string
-  triggerHighWad: bigint | null
-  repricedAfterWad: bigint | null
-  spotBeforeWad: bigint | null
-  spotAfterWad: bigint | null
-}): { low: bigint | null; high: bigint | null } {
-  if (model.triggerKind === 'liquidatable' && model.spotAfterWad !== null && model.spotBeforeWad !== null) {
-    return { low: model.spotAfterWad, high: model.spotBeforeWad }
-  }
-  if (
-    (model.triggerKind === 'twap' || model.triggerKind === 'mixed') &&
-    model.repricedAfterWad !== null &&
-    model.triggerHighWad !== null
-  ) {
-    return { low: model.repricedAfterWad, high: model.triggerHighWad }
-  }
-  return { low: null, high: null }
 }
 
 export function priceSpanLabel(low: bigint | null, high: bigint | null): string {

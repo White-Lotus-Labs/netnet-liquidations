@@ -81,11 +81,13 @@ describe('buy zone copy', () => {
       label: scenarioLabel('hf105'),
       model,
       desk,
+      book: null,
       facilityMultiple: 2,
       runwayDays: 30,
     })
     expect(copy.headline).toContain('USDG/NET')
-    expect(copy.headline).toContain('if')
+    expect(copy.headline).toContain('canonical pool')
+    expect(copy.alert).toMatch(/canonical Uniswap v2/)
     expect(copy.caveats.some((line) => line.includes('15%'))).toBe(true)
     expect(copy.caveats.some((line) => line.includes('0.30%'))).toBe(true)
   })
@@ -95,6 +97,7 @@ describe('buy zone copy', () => {
       label: scenarioLabel('liquidatable'),
       model: buildScenario(desk, enrichPositions(desk), 'liquidatable', 0n),
       desk,
+      book: null,
       facilityMultiple: null,
       runwayDays: null,
     })

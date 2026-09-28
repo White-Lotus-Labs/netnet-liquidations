@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ADDRESSES, LINKS, POLL_MS } from './config.ts'
 import { loadDesk } from './adapters/loadDesk.ts'
+import { QUOTE_RUNGS_NET, loadQuotes, quoteBookSnapshot, rungRaw } from './adapters/quotes.ts'
 import { BookHeader } from './components/BookHeader.tsx'
 import { BuyCallout } from './components/BuyCallout.tsx'
 import { CascadePanel } from './components/CascadePanel.tsx'
@@ -9,6 +10,7 @@ import { OracleStrip } from './components/OracleStrip.tsx'
 import { describeBuyZone } from './lib/buyZone.ts'
 import { formatAge, formatUsdg, formatWarsaw, cx } from './lib/format.ts'
 import { buildScenario, enrichPositions, facilityStats, scenarioLabel, weakestRunway, type ScenarioId } from './lib/model.ts'
+import { emptyBook, type QuoteBook } from './lib/quoteBook.ts'
 import { sampleDesk } from './mock/sampleDesk.ts'
 import type { Desk } from './types.ts'
 
@@ -19,6 +21,7 @@ export default function App() {
   const [scenario, setScenario] = useState<ScenarioId>('hf105')
   const [customInput, setCustomInput] = useState('25000')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [book, setBook] = useState<QuoteBook | null>(null)
   const modeRef = useRef<'loading' | 'live' | 'mock'>('loading')
 
   useEffect(() => {
@@ -60,6 +63,41 @@ export default function App() {
   }, [refreshKey])
 
   const rows = useMemo(() => (desk ? enrichPositions(desk) : []), [desk])
+  const flowNet = useMemo(() => {
+    if (!desk) return 0n
+    return buildScenario(desk, rows, scenario, parseDebt(customInput)).flowNetRaw ?? 0n
+  }, [desk, rows, scenario, customInput])
+
+  const shownBook = useMemo(() => {
+    if (desk?.mode === 'mock') {
+      return emptyBook('Sample book. Router quotes are not applied to illustration borrowers.')
+    }
+    if (desk?.mode === 'live' && book === null) return emptyBook(null, 'loading')
+    return book
+  }, [desk, book])
+
+  useEffect(() => {
+    if (!desk || desk.mode !== 'live') return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      const sizes = QUOTE_RUNGS_NET.map((whole) => rungRaw(whole))
+      if (flowNet > 0n) sizes.push(flowNet)
+      void loadQuotes(desk.fetchedAt, sizes, controller.signal)
+        .then(() => {
+          if (!controller.signal.aborted) setBook(quoteBookSnapshot())
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setBook(emptyBook('Router quotes failed. Buy zone uses the canonical pool only.'))
+          }
+        })
+    }, 350)
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [desk, flowNet])
+
   const copy = useMemo(() => {
     if (!desk) return null
     const customDebt = parseDebt(customInput)
@@ -68,10 +106,11 @@ export default function App() {
       label: scenarioLabel(scenario),
       model,
       desk,
+      book: shownBook,
       facilityMultiple: facilityStats(desk).multiple,
       runwayDays: weakestRunway(rows),
     })
-  }, [desk, rows, scenario, customInput])
+  }, [desk, rows, scenario, customInput, shownBook])
 
   const age =
     desk?.blockTimestamp != null ? Math.max(0, Math.round(desk.fetchedAt / 1000) - desk.blockTimestamp) : null
@@ -84,7 +123,7 @@ export default function App() {
             <p className="text-[11px] uppercase tracking-[0.18em] text-amber">NetNet · Robinhood Chain 4663</p>
             <h1 className="mt-1 text-2xl font-medium tracking-tight text-ink">Loopback buy zones</h1>
             <p className="mt-1 max-w-xl text-sm text-muted">
-              Where a wsNET/USDG margin call is likely to print in the canonical NET pool. Built for sizing bids into that supply.
+              Where a wsNET/USDG margin call is likely to print across router depth. The canonical NET/USDG pool is the floor.
             </p>
           </div>
           <div className="flex flex-col items-start gap-1 text-xs text-muted sm:items-end">
@@ -148,6 +187,7 @@ export default function App() {
                 onScenario={setScenario}
                 customInput={customInput}
                 onCustom={setCustomInput}
+                book={shownBook}
               />
             </div>
             <BuyCallout copy={copy} />
@@ -186,7 +226,7 @@ function Loading() {
           <div key={key} className="h-20 animate-pulse rounded-md border border-line bg-panel" />
         ))}
       </div>
-      <p className="text-sm text-muted">Reading Morpho, the Loopback oracle, and the NET/USDG pool…</p>
+        <p className="text-sm text-muted">Reading Morpho, the Loopback oracle, the canonical pool, and router quotes…</p>
     </div>
   )
 }

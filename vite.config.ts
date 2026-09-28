@@ -1,8 +1,15 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const zeroxKey = env.ZEROX_API_KEY || env.VITE_ZEROX_API_KEY || ''
+  return {
+  define: {
+    __ZEROX_API_KEY__: JSON.stringify(zeroxKey),
+  },
   plugins: [react(), tailwindcss()],
   server: {
     host: '0.0.0.0',
@@ -18,4 +25,5 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
   },
+  }
 })
