@@ -3,7 +3,7 @@ import { parseKyber, parseLifi, parseZeroX, shareFills } from '../adapters/quote
 import { sampleDesk } from '../mock/sampleDesk.ts'
 import { describeBuyZone } from './buyZone.ts'
 import { buildScenario, enrichPositions, scenarioLabel } from './model.ts'
-import { avgPriceWad, buildImpactView, executionAt, type QuoteBook, type SizedQuote } from './quoteBook.ts'
+import { avgPriceWad, buildImpactView, executionAt, quoteStatusLabel, type QuoteBook, type SizedQuote } from './quoteBook.ts'
 import { SPOT_SCALE } from './units.ts'
 
 const NET = 1_000_000_000n
@@ -103,6 +103,24 @@ describe('quote parsers', () => {
     const parsed = parseLifi({ tool: 'nordstern', estimate: { fromAmount: '10000000000', toAmount: '3387903635' } }, 10n * NET)
     expect(parsed?.provider).toBe('lifi')
     expect(parsed?.fills[0]?.shareBps).toBe(10_000)
+  })
+})
+
+describe('quote status', () => {
+  it('names the router when quotes exist, even before a scenario is chosen', () => {
+    expect(quoteStatusLabel(null)).toBe('Quoting router depth…')
+    expect(
+      quoteStatusLabel({
+        status: 'live',
+        fetchedAt: 1,
+        warning: null,
+        points: [],
+        providers: ['kyberswap'],
+      }),
+    ).toContain('KyberSwap')
+    expect(quoteStatusLabel({ status: 'unavailable', fetchedAt: null, warning: null, points: [], providers: [] })).toBe(
+      'Canonical Uniswap v2 only',
+    )
   })
 })
 

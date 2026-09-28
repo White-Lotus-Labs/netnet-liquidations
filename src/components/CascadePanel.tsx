@@ -9,7 +9,7 @@ import {
   type EnrichedPosition,
   type ScenarioId,
 } from '../lib/model.ts'
-import { buildImpactView, chartQuotes, fillLabel, routerMultiple, type QuoteBook } from '../lib/quoteBook.ts'
+import { buildImpactView, chartQuotes, fillLabel, quoteStatusLabel, routerMultiple, type QuoteBook } from '../lib/quoteBook.ts'
 import { WAD } from '../lib/units.ts'
 import { ImpactChart } from './ImpactChart.tsx'
 
@@ -57,11 +57,7 @@ export function CascadePanel({
       <div className="border-b border-line px-3 py-2.5">
         <h2 className="text-[11px] uppercase tracking-[0.16em] text-faint">Cascade / price impact</h2>
         <p className="mt-1 text-sm text-muted" data-testid="quote-status">
-          {book?.status === 'loading'
-            ? 'Quoting router depth…'
-            : impact.source === 'aggregator'
-              ? `Impact via router/aggregator (Matcha-style) · ${impact.providerLabel}`
-              : 'Canonical Uniswap v2 only'}
+          {quoteStatusLabel(book)}
         </p>
         <p className="mt-1 text-sm text-muted">
           Seized wsNET at the 62.5% line is about 70.4% of collateral (LLTV × 12.7% incentive). Already-liquidatable names can lose up to 100%. The mint curve is average router fill. The dashed curve is the canonical pair’s price after the same sale.

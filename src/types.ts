@@ -17,7 +17,7 @@ export type FootnoteMarket = {
 }
 
 export type Desk = {
-  mode: 'live' | 'mock'
+  mode: 'live' | 'seed' | 'mock'
   fetchedAt: number
   blockNumber: number | null
   blockTimestamp: number | null

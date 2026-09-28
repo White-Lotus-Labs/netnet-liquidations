@@ -32,7 +32,9 @@ Copy `.env.example` to `.env` if you want a different RPC or poll interval. Defa
 | `VITE_POLL_SECONDS` | `45` | Refresh interval (15–300) |
 | `ZEROX_API_KEY` | unset | Optional 0x / Matcha key. Inlined into the bundle. See below. |
 
-The public Robinhood RPC is rate-limited. If the first paint cannot reach both the RPC and Morpho, the page shows a **SAMPLE** banner and a frozen illustration. It does not silently mix sample rows into a live book. A later failed refresh keeps the last live book and says so.
+The first paint is the **18:02 Europe/Warsaw stress snapshot** in `seed/` (block 74,925,656): the 62.5% book, the mid-band oracle, the canonical pool, and the 30 weakest borrowers. The badge says **Snapshot** until a live poll replaces the whole book. Router quotes still load against the current aggregator while that snapshot is up. If the first poll fails, the snapshot stays and the banner says so. A later failed refresh keeps the last live book.
+
+The snapshot ladder is those 30 names, not all 192. “Top 10 debt” on that paint is the largest of the 30. The attached note’s cascade assumed 100% collateral seizure and a 5% treasury fee into one pool. This desk still seizes about 70.4% at the health = 1 line, draws the canonical pair at 0.30%, and prefers a live router quote for the buy zone.
 
 ## How to read it
 
@@ -93,4 +95,6 @@ Sizes quoted each refresh: 1, 5, 15, 40, 80, 150, 300, and 600 NET, plus the sce
 | `src/lib/quoteBook.ts` | Router curve math and the aggregator-vs-pair comparison. |
 | `src/adapters/quotes.ts` | KyberSwap, optional 0x, LI.FI fallback. |
 | `src/lib/model.ts` | Ladder rows and scenario buckets. |
-| `src/mock/sampleDesk.ts` | Frozen illustration if live fetch fails. |
+| `src/seed/stressDesk.ts` | 18:02 Warsaw snapshot used for first paint. |
+| `seed/` | The stress note and JSON that snapshot was taken from. |
+| `src/mock/sampleDesk.ts` | Frozen illustration kept for tests. |

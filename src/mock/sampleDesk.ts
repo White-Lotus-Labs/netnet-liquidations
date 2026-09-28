@@ -11,8 +11,8 @@ import type { Desk, RawPosition } from '../types.ts'
 const WAD = 10n ** 18n
 
 /**
- * Internally consistent illustration used only when live RPC and Morpho both fail.
- * Round levels, not a snapshot of the book.
+ * Internally consistent illustration for tests. The app's first paint is the
+ * 18:02 stress snapshot, then a live poll. This book is not shown on load.
  */
 export function sampleDesk(reason: string): Desk {
   const twapWad = 350n * WAD

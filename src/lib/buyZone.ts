@@ -216,6 +216,11 @@ function baseCaveats(
   if (desk.mode === 'mock') {
     caveats.push('This page is the frozen sample book, not the live market.')
   }
+  if (desk.mode === 'seed') {
+    caveats.push(
+      'The ladder and the canonical pool are the 18:02 Europe/Warsaw snapshot. This desk seizes about 70.4% of collateral at the health = 1 line. That stress note assumed 100% of collateral and a 5% treasury fee on one pool, which prints a larger move.',
+    )
+  }
 
   return caveats
 }

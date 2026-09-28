@@ -263,6 +263,17 @@ export function buildImpactView(model: ScenarioModel, book: QuoteBook | null): I
   }
 }
 
+export function quoteStatusLabel(book: QuoteBook | null): string {
+  if (book === null || book.status === 'loading') return 'Quoting router depth…'
+  if (book.status === 'live') {
+    const who = book.providers.map((provider) => providerLabel(provider)).join(' + ')
+    return who.length > 0
+      ? `Impact via router/aggregator (Matcha-style) · ${who}`
+      : 'Impact via router/aggregator (Matcha-style)'
+  }
+  return 'Canonical Uniswap v2 only'
+}
+
 export function routerMultiple(routerOut: bigint | null, canonicalOut: bigint | null): string | null {
   if (routerOut === null || canonicalOut === null || canonicalOut <= 0n) return null
   const milli = (routerOut * 1000n) / canonicalOut

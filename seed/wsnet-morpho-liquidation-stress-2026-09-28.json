@@ -1,0 +1,160 @@
+{
+  "report_time_warsaw": "2026-09-28T18:02:43.748711+02:00",
+  "snapshot_block": 74925656,
+  "snapshot_time_warsaw": "2026-09-28T18:02:43+02:00",
+  "market_id_625": "0xaa586d26a6fe62d9c0f0948fede6e2130500ac7a655587447e2d4a37e6330589",
+  "market_id_385": "0xf47c7a7a1ff6c7444e6fcfa20a71f439e4525f4f9640fe6ba5c080f6f2a9d33f",
+  "book": {
+    "supply_usdg": 700552.62,
+    "borrow_usdg": 699308.25,
+    "utilization": 0.998224,
+    "liquidity_usdg": 1244.38,
+    "collateral_wsnet": 2037.734734,
+    "collateral_oracle_usd": 2428488.35,
+    "collateral_spot_usd": 2592381.2,
+    "borrow_apy": 1.5730537832279599,
+    "supply_apy": 1.5687378897988578,
+    "n_borrowers": 192
+  },
+  "oracle": {
+    "credited_usdg_per_wsnet": 1191.758825,
+    "nav": 174.745005,
+    "dividend_index": 3.783476884,
+    "net_per_wsnet": 3.783476884,
+    "floor_credited": 661.1437,
+    "cap_5x_credited": 3305.7184,
+    "band": "mid (NAV < TWAP\u00d70.90 < 5\u00d7NAV)",
+    "implied_twap": 349.9893,
+    "spot": 336.2483,
+    "pause_spot_twap_x_0_85": 297.4909
+  },
+  "pool": {
+    "usdg": 236145.48,
+    "net": 702.294883,
+    "guidance_10pct_usdg": 23614.55,
+    "borrows_over_guidance_multiple": 29.61,
+    "borrows_over_pool_depth": 2.9613
+  },
+  "health_buckets": {
+    "hf_lt_1": {
+      "n": 0,
+      "debt_usdg": 0,
+      "coll_net": 0
+    },
+    "hf_lt_1_05": {
+      "n": 5,
+      "debt_usdg": 5571.9,
+      "coll_net": 29.2421,
+      "impact_pct_5fee": 7.65,
+      "shortfall_5fee": 0.0
+    },
+    "hf_lt_1_10": {
+      "n": 14,
+      "debt_usdg": 23639.03,
+      "coll_net": 127.7656,
+      "impact_pct_5fee": 27.86,
+      "shortfall_5fee": 0.0
+    },
+    "hf_lt_1_20": {
+      "n": 30,
+      "debt_usdg": 129164.13,
+      "coll_net": 751.1954,
+      "impact_pct_5fee": 76.03,
+      "shortfall_5fee": 10145.7,
+      "recovery_pct_5fee": 92.15
+    }
+  },
+  "tightest_position": {
+    "user": "0x505BD4496939C8763Ad84717305E71EB1fF9D472",
+    "hf": 1.006286,
+    "debt_usdg": 0.3,
+    "credited_drop_pct_to_liq": 0.6247,
+    "implied_twap_liq": 347.8
+  },
+  "market_385": {
+    "supply_usdg": 1602.11,
+    "borrow_usdg": 171.11
+  },
+  "top10": [
+    {
+      "user": "0x505BD4496939C8763Ad84717305E71EB1fF9D472",
+      "hf": 1.0063,
+      "debt": 0.3,
+      "drop_pct": 0.625,
+      "twap_liq": 347.8,
+      "days_to_liq": 1.5
+    },
+    {
+      "user": "0xffF15DB33ca3187dFEE2C9bDb7BCDAC89172Dae9",
+      "hf": 1.0068,
+      "debt": 1051.08,
+      "drop_pct": 0.674,
+      "twap_liq": 347.63,
+      "days_to_liq": 1.6
+    },
+    {
+      "user": "0x47852Fdb50952ea95E845b02366c2f7E728e4b4F",
+      "hf": 1.0341,
+      "debt": 2363.66,
+      "drop_pct": 3.302,
+      "twap_liq": 338.43,
+      "days_to_liq": 7.8
+    },
+    {
+      "user": "0x8cE1dE121ee39E6539B0e8F52373Fec4eBB1eCB9",
+      "hf": 1.0434,
+      "debt": 25.88,
+      "drop_pct": 4.155,
+      "twap_liq": 335.45,
+      "days_to_liq": 9.8
+    },
+    {
+      "user": "0x3Fb50b14058BB5bffbf871eE973f7ccdDE7ff426",
+      "hf": 1.0451,
+      "debt": 2130.98,
+      "drop_pct": 4.311,
+      "twap_liq": 334.9,
+      "days_to_liq": 10.2
+    },
+    {
+      "user": "0x42b0A676617490466877B9F9239d8FF35bfaa9d1",
+      "hf": 1.0504,
+      "debt": 8.01,
+      "drop_pct": 4.8,
+      "twap_liq": 333.19,
+      "days_to_liq": 11.4
+    },
+    {
+      "user": "0xCD2adEe11bF6b79a4a197D8f80e2b575d2412781",
+      "hf": 1.0618,
+      "debt": 8263.08,
+      "drop_pct": 5.819,
+      "twap_liq": 329.62,
+      "days_to_liq": 13.9
+    },
+    {
+      "user": "0xDd583ca50e583380E4746e5E740ed0E02fb25559",
+      "hf": 1.0662,
+      "debt": 170.86,
+      "drop_pct": 6.207,
+      "twap_liq": 328.27,
+      "days_to_liq": 14.9
+    },
+    {
+      "user": "0xef14EBD0f14f1fECFBe3b1016718BF913A16a291",
+      "hf": 1.0674,
+      "debt": 1347.59,
+      "drop_pct": 6.317,
+      "twap_liq": 327.88,
+      "days_to_liq": 15.1
+    },
+    {
+      "user": "0x1A513863f9235b0D6ad7fAbbdd0f1062E9C0491c",
+      "hf": 1.074,
+      "debt": 22.94,
+      "drop_pct": 6.889,
+      "twap_liq": 325.88,
+      "days_to_liq": 16.6
+    }
+  ]
+}
