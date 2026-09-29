@@ -34,6 +34,8 @@ Copy `.env.example` to `.env` if you want a different RPC or poll interval. Defa
 | `VITE_MORPHO_GRAPHQL` | `https://api.morpho.org/graphql` | Borrower list, collateral outstanding, borrow/supply APY |
 | `VITE_POLL_SECONDS` | `45` | Refresh interval (15–300) |
 | `ZEROX_API_KEY` | unset | Optional 0x / Matcha key. Inlined into the bundle. See below. |
+| `NANSEN_API_KEY` | unset | Server-only. Feeds the holder and flow panel through `/api/nansen`. Never inlined. |
+| `NANSEN_TTL_MINUTES` | `60` | How long the server keeps one Nansen read (10–720). |
 
 The first paint is the **18:02 Europe/Warsaw stress snapshot** in `seed/` (block 74,925,656): the 62.5% book, the mid-band oracle, the canonical pool, and the 30 weakest borrowers. The badge says **Snapshot** until a live poll replaces the whole book. Router quotes still load against the current aggregator while that snapshot is up. If the first poll fails, the snapshot stays and the banner says so. A later failed refresh keeps the last live book.
 
@@ -54,6 +56,12 @@ Facility size is compared with the [NetNet lending guidance](https://docs.netnet
 
 The 38.5% LLTV twin market is a footnote only. It is not in the ladder.
 
+6. **Credit** — who funds the book. NetNet Credit (nnUSDG, Morpho Vault V2 `0x9934…3B57`) lends USDG into Loopback and six stock markets. The panel shows vault assets, what can leave now, depositor APY, the two largest depositors, and the largest borrower weighted by vault money. The table lists each market’s allocation, cap, free USDG, utilization, borrow APY, and the borrow APY in 7 days if utilization holds. Charts show 14 days of Loopback borrow APY, utilization, and supplied USDG. Risks are computed each refresh.
+7. **Pendle** — the sNET index priced forward. Every wsNET’s credited value is multiplied by `sNET.index()`, so index growth is the looper’s income and the borrow rate is the cost. The panel converts Pendle’s implied and trailing APY to a daily rate, measures on-chain index drift from the seed snapshot, and projects when the adaptive curve pushes the Loopback borrow rate past the implied index growth. Past that point the loop has negative carry.
+8. **Holders and flows** — Nansen on NET: holder count, 7-day DEX buy and sell volume, smart-money and public-figure net flow, the staking pool’s share, net buyers and sellers by label, and the smart-money tape. Loopback borrowers and large credit-vault borrowers are tagged. Nansen labels also show under ladder addresses.
+
+The Morpho vault and Pendle reads refresh every 5 minutes in the browser. Nansen runs on the server, one read per `NANSEN_TTL_MINUTES`, and only when someone opens the page.
+
 ## Assumptions that move the print
 
 - At the health = 1 boundary, seized collateral is about **70.4%** of the position: LLTV 62.5% times Morpho’s incentive of about **12.7%** (`1 / (1 - 0.3 × (1 - LLTV))`, capped at 15%). Names already underwater can lose up to 100% of collateral, and may leave bad debt.
@@ -62,6 +70,9 @@ The 38.5% LLTV twin market is a footnote only. It is not in the ladder.
 - Router quotes are indicative. A liquidator can split worse, wait, or not dump 100% at once.
 - “Top 10 debt” is a hypothetical simultaneous close-out, not a claim those names margin-call together.
 - Flat-credit “interest runway” assumes credited value does not move and the displayed borrow APY keeps compounding. It is a clock, not a price target.
+- The adaptive-curve projection holds utilization constant and uses Morpho’s constants: 90% target, steepness 4, speed 50 a year, rate at target 0.1%–200%. Real rates move as soon as someone repays or supplies.
+- Pendle yields are in NET per wsNET, not USD. New NET dilutes NAV per NET. Pendle only prices to the listed maturity; the desk uses that implied rate as the best read beyond it.
+- Nansen “smart money” means labels with 🤓. Top-100 buyer and seller lists are Nansen’s ranking, not the full tape. The staking pool trades on the DEX, so treat its flow as protocol flow.
 - Position sizes come from the Morpho API and can lag the chain by a few minutes. Supply, borrow, spot, TWAP, NAV, index, and `price()` are read from RPC on each refresh. Missing fields stay **unavailable**. Nothing here is a live P&L.
 
 ## Links
@@ -97,11 +108,16 @@ Sizes quoted each refresh: 1, 5, 15, 40, 80, 150, 300, and 600 NET, plus the sce
 | `src/lib/uniswap.ts` | Canonical-pair constant-product impact. |
 | `src/lib/quoteBook.ts` | Router curve math and the aggregator-vs-pair comparison. |
 | `src/adapters/quotes.ts` | KyberSwap, optional 0x, LI.FI fallback. |
+| `src/adapters/credit.ts` | NetNet Credit vault, its markets, top borrowers, Loopback rate history (Morpho GraphQL). |
+| `src/adapters/pendle.ts` | Pendle sNET maturities and daily implied/underlying history. |
+| `src/lib/rates.ts` | Adaptive-curve projection and daily-rate conversions. |
+| `src/lib/flows.ts` | Nansen label classes, net movers, smart-money tape, holder split. |
+| `nansen.mjs` | Server-side Nansen reads with a TTL cache. Used by `server.mjs` and the Vite dev server. |
 | `src/lib/model.ts` | Ladder rows and scenario buckets. |
 | `src/seed/stressDesk.ts` | 18:02 Warsaw snapshot used for first paint. |
 | `seed/` | The stress note and JSON that snapshot was taken from. |
 | `src/mock/sampleDesk.ts` | Frozen illustration kept for tests. |
-| `server.mjs` | Production static server. Reads `PORT`, serves `dist/`, SPA fallback, `/health`. |
+| `server.mjs` | Production server. Reads `PORT`, serves `dist/`, SPA fallback, `/health`, `/api/nansen`. |
 | `railway.toml` | Nixpacks build, start command, healthcheck. |
 | `nixpacks.toml` | Installs devDependencies so `vite` and `tsc` exist when `NODE_ENV=production`. |
 
@@ -117,6 +133,8 @@ The public defaults work with no secrets: Robinhood Chain RPC, Morpho GraphQL, a
 | `VITE_MORPHO_GRAPHQL` | no | `https://api.morpho.org/graphql` if unset |
 | `VITE_POLL_SECONDS` | no | `45` if unset |
 | `ZEROX_API_KEY` or `VITE_ZEROX_API_KEY` | no | Referrer-restricted 0x key. Inlined into the JS. Do not commit it. |
+| `NANSEN_API_KEY` | no | Runtime only. Without it the flow panel says the key is missing and the rest works. |
+| `NANSEN_TTL_MINUTES` | no | `60` if unset. Each read is 9 Nansen calls. |
 | `PORT` | set by Railway | `server.mjs` binds `0.0.0.0:$PORT`. Do not hardcode it. |
 
 From the Railway dashboard, with this repo linked:

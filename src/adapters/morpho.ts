@@ -141,7 +141,7 @@ type MarketState = {
   timestamp: number | null
 }
 
-async function gql<T>(query: string, variables: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+export async function gql<T>(query: string, variables: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const response = await fetch(MORPHO_GRAPHQL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
