@@ -1,10 +1,19 @@
 import { useState } from 'react'
 import { cx, formatHealth, formatPercentWad, formatUsdg, formatWad, formatWsNet, shortAddress } from '../lib/format.ts'
 import type { Trigger } from '../lib/liquidation.ts'
+import { LABEL_TONE, labelClass } from '../lib/flows.ts'
 import type { EnrichedPosition } from '../lib/model.ts'
 import { WAD } from '../lib/units.ts'
 
-export function Ladder({ rows, borrowerCount }: { rows: EnrichedPosition[]; borrowerCount: number | null }) {
+export function Ladder({
+  rows,
+  borrowerCount,
+  labels,
+}: {
+  rows: EnrichedPosition[]
+  borrowerCount: number | null
+  labels: Map<string, string>
+}) {
   const [copied, setCopied] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const filtered = query.trim()
@@ -70,6 +79,7 @@ export function Ladder({ rows, borrowerCount }: { rows: EnrichedPosition[]; borr
                     >
                       {shortAddress(row.address)}
                     </button>
+                    <Label text={labels.get(row.address.toLowerCase()) ?? null} />
                   </td>
                   <td className="num px-3 py-1.5 text-right">{formatWsNet(row.collateralRaw, 2)}</td>
                   <td className="num px-3 py-1.5 text-right">{formatUsdg(row.borrowRaw, 0)}</td>
@@ -92,6 +102,15 @@ export function Ladder({ rows, borrowerCount }: { rows: EnrichedPosition[]; borr
         </table>
       </div>
     </section>
+  )
+}
+
+function Label({ text }: { text: string | null }) {
+  if (!text) return null
+  return (
+    <span className={cx('block max-w-[11rem] truncate text-[10px]', LABEL_TONE[labelClass(text) ?? 'other'])} title={`Nansen: ${text}`}>
+      {text}
+    </span>
   )
 }
 

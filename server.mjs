@@ -2,6 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { handleNansen } from './nansen.mjs'
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), 'dist')
 const host = '0.0.0.0'
@@ -50,6 +51,10 @@ const server = createServer((req, res) => {
       'content-type': 'text/plain; charset=utf-8',
     })
     res.end('ok')
+    return
+  }
+  if (url.pathname === '/api/nansen' && req.method === 'GET') {
+    void handleNansen(req, res)
     return
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') {

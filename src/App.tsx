@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ADDRESSES, LINKS, POLL_MS } from './config.ts'
+import { ADDRESSES, LINKS, NANSEN_ROUTE, POLL_MS } from './config.ts'
+import { readCredit } from './adapters/credit.ts'
 import { loadDesk } from './adapters/loadDesk.ts'
+import { readPendle } from './adapters/pendle.ts'
 import { QUOTE_RUNGS_NET, loadQuotes, quoteBookSnapshot, rungRaw } from './adapters/quotes.ts'
 import { BookHeader } from './components/BookHeader.tsx'
 import { BuyCallout } from './components/BuyCallout.tsx'
 import { CascadePanel } from './components/CascadePanel.tsx'
+import { CreditPanel } from './components/CreditPanel.tsx'
+import { FlowsPanel } from './components/FlowsPanel.tsx'
 import { Ladder } from './components/Ladder.tsx'
 import { OracleStrip } from './components/OracleStrip.tsx'
+import { PendlePanel } from './components/PendlePanel.tsx'
 import { describeBuyZone } from './lib/buyZone.ts'
+import { labelMap, type NansenSnapshot } from './lib/flows.ts'
 import { formatAge, formatUsdg, formatWarsaw, cx } from './lib/format.ts'
 import { buildScenario, enrichPositions, facilityStats, scenarioLabel, weakestRunway, type ScenarioId } from './lib/model.ts'
 import { emptyBook, type QuoteBook } from './lib/quoteBook.ts'
@@ -24,6 +30,11 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [book, setBook] = useState<QuoteBook | null>(null)
   const modeRef = useRef<'seed' | 'live' | 'mock'>('seed')
+  const credit = usePolled(readCredit, CONTEXT_POLL_MS, refreshKey)
+  const pendle = usePolled(readPendle, CONTEXT_POLL_MS, refreshKey)
+  const nansen = usePolled(readNansen, NANSEN_POLL_MS, refreshKey)
+  const labels = useMemo(() => labelMap(nansen.data), [nansen.data])
+  const borrowers = useMemo(() => desk.positions.map((position) => position.address), [desk])
 
   useEffect(() => {
     let cancelled = false
@@ -186,8 +197,8 @@ export default function App() {
           <>
             <BookHeader desk={desk} />
             <OracleStrip desk={desk} runwayDays={weakestRunway(rows)} />
-            <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
-              <Ladder rows={rows} borrowerCount={desk.borrowerCount} />
+            <div className="mt-4 grid items-start gap-4 *:min-w-0 xl:grid-cols-2">
+              <Ladder rows={rows} borrowerCount={desk.borrowerCount} labels={labels} />
               <CascadePanel
                 desk={desk}
                 rows={rows}
@@ -199,6 +210,16 @@ export default function App() {
               />
             </div>
             <BuyCallout copy={copy} />
+            <CreditPanel credit={credit.data} error={credit.error} />
+            <div className="mt-4 grid items-start gap-4 *:min-w-0 xl:grid-cols-2">
+              <PendlePanel pendle={pendle.data} error={pendle.error} desk={desk} credit={credit.data} />
+              <FlowsPanel
+                snapshot={nansen.data}
+                error={nansen.error}
+                borrowers={borrowers}
+                exposures={credit.data?.exposures ?? []}
+              />
+            </div>
             <footer className="mt-6 space-y-2 border-t border-line pt-4 text-xs leading-relaxed text-faint">
               <p>
                 Market {short(ADDRESSES.marketId)} · oracle {short(ADDRESSES.oracle)} · pair {short(ADDRESSES.pair)}. Polls every{' '}
@@ -224,6 +245,41 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+const CONTEXT_POLL_MS = 5 * 60_000
+const NANSEN_POLL_MS = 15 * 60_000
+
+/** Load on mount, on Refresh, and on an interval. A failed refresh keeps the last good read. */
+function usePolled<T>(load: (signal: AbortSignal) => Promise<T>, everyMs: number, refreshKey: number) {
+  const [state, setState] = useState<{ data: T | null; error: string | null }>({ data: null, error: null })
+  useEffect(() => {
+    let controller = new AbortController()
+    const run = () => {
+      controller.abort()
+      controller = new AbortController()
+      const signal = controller.signal
+      load(signal).then(
+        (data) => !signal.aborted && setState({ data, error: null }),
+        (error: unknown) =>
+          !signal.aborted && setState((prev) => ({ data: prev.data, error: error instanceof Error ? error.message : 'Fetch failed' })),
+      )
+    }
+    run()
+    const timer = window.setInterval(run, everyMs)
+    return () => {
+      controller.abort()
+      window.clearInterval(timer)
+    }
+  }, [load, everyMs, refreshKey])
+  return state
+}
+
+async function readNansen(signal: AbortSignal): Promise<NansenSnapshot> {
+  const response = await fetch(NANSEN_ROUTE, { signal })
+  const body = (await response.json().catch(() => null)) as (NansenSnapshot & { error?: string }) | null
+  if (!response.ok || !body || body.error) throw new Error(body?.error ?? `HTTP ${response.status}`)
+  return body
 }
 
 function modeBadge(desk: Desk | null, loading: boolean): { label: string; className: string } {

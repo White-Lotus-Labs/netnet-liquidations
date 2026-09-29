@@ -132,3 +132,28 @@ export function wadToNumber(wad: bigint): number {
   const value = Number(whole) + Number(frac9) / 1e9
   return negative ? -value : value
 }
+
+/** Whole or compact dollars from a float. Display only. */
+export function formatUsd(value: number | null, compact = false): string {
+  if (value === null || !Number.isFinite(value)) return '—'
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+  if (compact && abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`
+  if (compact && abs >= 10_000) return `${sign}$${Math.round(abs / 1_000)}k`
+  return `${sign}$${Math.round(abs).toLocaleString('en-US')}`
+}
+
+export function formatSignedUsd(value: number | null, compact = true): string {
+  if (value === null || !Number.isFinite(value)) return '—'
+  return `${value > 0 ? '+' : ''}${formatUsd(value, compact)}`
+}
+
+/** A daily rate as a signed percent, for yields too large to read as APY. */
+export function formatDaily(rate: number | null, digits = 2): string {
+  if (rate === null || !Number.isFinite(rate)) return '—'
+  return `${rate > 0 ? '+' : ''}${(rate * 100).toFixed(digits)}%/d`
+}
+
+export function formatCount(value: number | null): string {
+  return value === null || !Number.isFinite(value) ? '—' : Math.round(value).toLocaleString('en-US')
+}

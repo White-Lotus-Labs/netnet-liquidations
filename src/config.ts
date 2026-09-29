@@ -21,6 +21,10 @@ export const ADDRESSES = {
   pairOracle: '0x929631b33f4070d6f54477fba3fd27566567daca',
   treasury: '0x04822ea321a0dee6f40656172f29312104855d66',
   sNet: '0xb773ec2c326b7f98a5a83fc098825492f020a4c7',
+  /** NetNet Credit (nnUSDG), Morpho Vault V2 that funds this market and six stock markets. */
+  creditVault: '0x99347d5F70D3838763f6Bddcf80304C8aa953B57',
+  /** Pendle SY wraps sNET as this scaled-18 token; every sNET maturity shares it. */
+  pendleSnetUnderlying: '0x53176cadd446700fa6b89f840357ac586d7e33db',
 } as const
 
 export const LINKS = {
@@ -33,6 +37,8 @@ export const LINKS = {
     'https://robinhoodchain.blockscout.com/address/0x59F95461E68e0c77605299791E1449f175165B54',
   oracleExplorer:
     'https://robinhoodchain.blockscout.com/address/0xCDE9599059f8Ae6D6B9F33A0aF7877827ec75F16',
+  creditVault: 'https://app.morpho.org/robinhood-chain/vault/0x99347d5F70D3838763f6Bddcf80304C8aa953B57',
+  pendle: 'https://app.pendle.finance/trade/markets',
 } as const
 
 export const RPC_URL = envString('VITE_RPC_URL', 'https://rpc.mainnet.chain.robinhood.com')
@@ -40,6 +46,12 @@ export const MORPHO_GRAPHQL = envString('VITE_MORPHO_GRAPHQL', 'https://api.morp
 
 /** Public KyberSwap aggregator on Robinhood Chain. No key. */
 export const KYBER_ROUTES = 'https://aggregator-api.kyberswap.com/robinhood/api/v1/routes'
+
+/** Pendle core API. Public, browser CORS allowed. */
+export const PENDLE_API = 'https://api-v2.pendle.finance/core'
+
+/** Same-origin route served by server.mjs (and the Vite dev middleware). Holds the Nansen key. */
+export const NANSEN_ROUTE = '/api/nansen'
 
 /** 0x Swap API indicative price. Used only when ZEROX_API_KEY is set. */
 export const ZEROX_PRICE = 'https://api.0x.org/swap/allowance-holder/price'

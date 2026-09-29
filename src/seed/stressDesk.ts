@@ -13,6 +13,9 @@ import type { Desk, RawPosition } from '../types.ts'
 /** Block time of the attached stress read. */
 export const STRESS_SNAPSHOT_AT = Date.parse('2026-09-28T18:02:43+02:00')
 export const STRESS_SNAPSHOT_BLOCK = 74_925_656
+/** sNET.index() and treasury NAV at that block. The Pendle panel measures drift from here. */
+export const STRESS_INDEX = '3.783476884'
+export const STRESS_NAV = '174.745005'
 
 /**
  * Weakest 30 borrowers from seed/wsnet-morpho-liquidation-stress-2026-09-28.md.
@@ -70,8 +73,8 @@ export function dec(value: string, decimals: number): bigint {
  */
 export function stressDesk(): Desk {
   const twapWad = dec('349.9893', 18)
-  const navWad = dec('174.745005', 18)
-  const index = dec('3.783476884', 9)
+  const navWad = dec(STRESS_NAV, 18)
+  const index = dec(STRESS_INDEX, 9)
   const { clampedWad, regime } = clampCredit(twapWad, navWad)
   const creditedWad = creditedPerWsNetWad(clampedWad, index)
   const morphoPrice = morphoPriceFromCredited(creditedWad)
