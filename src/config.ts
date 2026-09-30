@@ -25,6 +25,8 @@ export const ADDRESSES = {
   creditVault: '0x99347d5F70D3838763f6Bddcf80304C8aa953B57',
   /** Pendle SY wraps sNET as this scaled-18 token; every sNET maturity shares it. */
   pendleSnetUnderlying: '0x53176cadd446700fa6b89f840357ac586d7e33db',
+  /** NetNet bond sales. Market 0 takes USDG, market 1 the NET/USDG LP token. Pays NET, vests 2 days. */
+  bondDepository: '0xff32a969A0c567129eECD926D04657728E1980C1',
 } as const
 
 export const LINKS = {
@@ -39,6 +41,9 @@ export const LINKS = {
     'https://robinhoodchain.blockscout.com/address/0xCDE9599059f8Ae6D6B9F33A0aF7877827ec75F16',
   creditVault: 'https://app.morpho.org/robinhood-chain/vault/0x99347d5F70D3838763f6Bddcf80304C8aa953B57',
   pendle: 'https://app.pendle.finance/trade/markets',
+  bondDocs: 'https://docs.netnet.capital/mechanism#5-primary-offerings-bond-sales-never-below-nav',
+  bondDepository:
+    'https://robinhoodchain.blockscout.com/address/0xff32a969A0c567129eECD926D04657728E1980C1',
 } as const
 
 export const RPC_URL = envString('VITE_RPC_URL', 'https://rpc.mainnet.chain.robinhood.com')
@@ -52,6 +57,9 @@ export const PENDLE_API = 'https://api-v2.pendle.finance/core'
 
 /** Same-origin route served by server.mjs (and the Vite dev middleware). Holds the Nansen key. */
 export const NANSEN_ROUTE = '/api/nansen'
+
+/** Same-origin bond index served by bonds.mjs. Answers `status: 'indexing'` until the first build ends. */
+export const BONDS_ROUTE = '/api/bonds'
 
 /** 0x Swap API indicative price. Used only when ZEROX_API_KEY is set. */
 export const ZEROX_PRICE = 'https://api.0x.org/swap/allowance-holder/price'

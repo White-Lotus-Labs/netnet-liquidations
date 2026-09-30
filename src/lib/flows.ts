@@ -95,18 +95,6 @@ export const CLASS_LABEL: Record<LabelClass | 'unlabeled', string> = {
   unlabeled: 'Unlabeled',
 }
 
-/** Tailwind text color per label class. */
-export const LABEL_TONE: Record<string, string> = {
-  smart: 'text-mint',
-  'former-smart': 'text-amber-dim',
-  staking: 'text-blue',
-  bot: 'text-faint',
-  'hl-trader': 'text-muted',
-  'public-figure': 'text-blue',
-  protocol: 'text-faint',
-  other: 'text-muted',
-}
-
 export type NetMover = { address: string; label: string | null; boughtUsd: number; soldUsd: number; netUsd: number }
 
 /** Join the BUY and SELL top lists on address. Each list already carries both sides. */

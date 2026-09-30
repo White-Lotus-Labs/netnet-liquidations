@@ -14,7 +14,6 @@ export const apyToApr = (apy: number): number => Math.log1p(apy)
 export const aprToApy = (apr: number): number => Math.expm1(apr)
 /** Compounded daily rate from an APY. */
 export const dailyFromApy = (apy: number): number => Math.expm1(Math.log1p(apy) / 365)
-export const dailyFromApr = (apr: number): number => Math.expm1(apr / 365)
 
 function errorOf(utilization: number): number {
   return utilization > TARGET_UTILIZATION

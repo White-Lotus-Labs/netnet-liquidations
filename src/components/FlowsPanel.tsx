@@ -1,251 +1,184 @@
-import { useMemo, type ReactNode } from 'react'
-import type { Exposure } from '../adapters/credit.ts'
-import {
-  CLASS_LABEL,
-  LABEL_TONE,
-  holderStats,
-  labelClass,
-  netMovers,
-  overlap,
-  segmentTotals,
-  smartTape,
-  type NansenSnapshot,
-  type NetMover,
-} from '../lib/flows.ts'
-import { cx, formatCount, formatRatio, formatSignedUsd, formatUsd, formatWarsaw, shortAddress } from '../lib/format.ts'
+import { useMemo } from 'react'
+import { CLASS_LABEL, holderStats, netMovers, overlap, segmentTotals, smartTape, type NansenSnapshot } from '../lib/flows.ts'
+import { cx, formatClock, formatCount, formatRatio, formatSignedUsd, formatUsd } from '../lib/format.ts'
+import { Details, Fresh, Kpi, KpiRow, Section, Who } from './ui.tsx'
+
+type Row = { address: string; label: string | null; netUsd: number }
 
 export function FlowsPanel({
   snapshot,
   error,
   borrowers,
-  exposures,
+  vaultBorrowers,
 }: {
   snapshot: NansenSnapshot | null
   error: string | null
-  borrowers: string[]
-  exposures: Exposure[]
+  borrowers: Set<string>
+  vaultBorrowers: Set<string>
 }) {
   const view = useMemo(() => {
     if (!snapshot) return null
     const movers = netMovers(snapshot.buyers ?? [], snapshot.sellers ?? [])
     return {
       movers,
-      segments: segmentTotals(movers),
+      // Smart money comes from flow-intelligence only; the top-100 row would be a second, disagreeing number.
+      segments: segmentTotals(movers).filter((row) => row.key !== 'smart'),
       tape: smartTape(snapshot.smartTrades ?? []),
       holders: holderStats(snapshot.holders ?? [], snapshot.info?.totalSupply ?? null),
-      borrowerOverlap: overlap(borrowers, movers),
+      levered: overlap(borrowers, movers),
     }
   }, [snapshot, borrowers])
 
+  const head = { id: 'flows', testId: 'flows-panel', seal: '流', eyebrow: 'NET holders · Nansen', title: 'DEX', accent: 'flows', meta: <>Powered by <strong>Nansen</strong></> }
+
   if (!snapshot || !view) {
     return (
-      <section aria-label="Holder flows" className="rounded-md border border-line bg-panel px-3 py-3 text-sm text-muted">
-        {error ? `Nansen data unavailable. ${error}` : 'Reading Nansen holder and flow data…'}
-      </section>
+      <Section {...head} fresh={<Fresh state={error ? 'offline' : 'loading'}>{error ? 'Nansen research is offline.' : 'Loading saved Nansen readings…'}</Fresh>}>
+        {null}
+      </Section>
     )
   }
 
-  const borrowerSet = new Set(borrowers.map((address) => address.toLowerCase()))
-  const vaultBorrowers = new Set(exposures.filter((row) => row.share > 0.05).map((row) => row.address.toLowerCase()))
   const tagsFor = (address: string): string[] => {
     const key = address.toLowerCase()
     const tags: string[] = []
-    if (vaultBorrowers.has(key)) tags.push('credit-vault borrower')
-    if (borrowerSet.has(key)) tags.push('Loopback borrower')
+    if (vaultBorrowers.has(key)) tags.push('Credit-vault borrower')
+    if (borrowers.has(key)) tags.push('Loopback borrower')
     return tags
   }
   const { info, flow1d, flow7d } = snapshot
-  const netVolume = info?.buyVolumeUsd != null && info.sellVolumeUsd != null ? info.buyVolumeUsd - info.sellVolumeUsd : null
-  const buyers = [...view.movers].sort((a, b) => b.netUsd - a.netUsd).filter((row) => row.netUsd > 0).slice(0, 8)
-  const sellers = [...view.movers].sort((a, b) => a.netUsd - b.netUsd).filter((row) => row.netUsd < 0).slice(0, 8)
-  const smartHeld = (snapshot.smartHolders ?? []).reduce((sum, row) => sum + (row.amount ?? 0), 0)
+  const dexNet = info?.buyVolumeUsd != null && info.sellVolumeUsd != null ? info.buyVolumeUsd - info.sellVolumeUsd : null
+  const buyers = [...view.movers].sort((a, b) => b.netUsd - a.netUsd).filter((row) => row.netUsd > 0).slice(0, 5)
+  const sellers = [...view.movers].sort((a, b) => a.netUsd - b.netUsd).filter((row) => row.netUsd < 0).slice(0, 5)
   const smartHeld7d = (snapshot.smartHolders ?? []).reduce((sum, row) => sum + (row.change7d ?? 0), 0)
-  const accumulators = view.tape.traders.filter((row) => row.netUsd > 0).slice(0, 5)
-  const distributors = [...view.tape.traders].reverse().filter((row) => row.netUsd < 0).slice(0, 5)
+  const adding = view.tape.traders.filter((row) => row.netUsd > 0).slice(0, 3)
+  const cutting = [...view.tape.traders].reverse().filter((row) => row.netUsd < 0).slice(0, 3)
+  // The staking pool and protocol contracts trade too, but they are not holders.
+  const ranked = view.segments.filter((row) => row.key !== 'staking' && row.key !== 'protocol').sort((a, b) => b.netUsd - a.netUsd)
+  const top = ranked[0]
+  const bottom = ranked[ranked.length - 1]
+  const answer = [
+    top && top.netUsd > 0 ? `${CLASS_LABEL[top.key]} net-bought the most in 7d (${formatSignedUsd(top.netUsd)}).` : '',
+    bottom && bottom.netUsd < 0 ? `${CLASS_LABEL[bottom.key]} net-sold the most (${formatSignedUsd(bottom.netUsd)}).` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  const levered = view.levered.buyUsd - view.levered.sellUsd
 
   return (
-    <section aria-label="Holder flows" className="rounded-md border border-line bg-panel" data-testid="flows-panel">
-      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-line px-3 py-2.5">
-        <div>
-          <h2 className="text-[11px] uppercase tracking-[0.16em] text-faint">Holders and flows · Nansen · NET</h2>
-          <p className="mt-1 text-sm text-ink">Who is buying and selling NET this week, and what smart money does.</p>
-        </div>
-        <p className={cx('text-xs', snapshot.stale ? 'text-amber' : 'text-muted')}>
-          {snapshot.stale ? 'Stale · ' : ''}read {formatWarsaw(snapshot.fetchedAt).replace(' Europe/Warsaw', '')} · refreshes every {snapshot.ttlMinutes}m
-        </p>
-      </div>
-
-      <dl className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3">
-        <Cell label="Holders" value={formatCount(info?.holders ?? null)} hint={`${formatCount(info?.uniqueBuyers ?? null)} buyers · ${formatCount(info?.uniqueSellers ?? null)} sellers, 7d`} />
-        <Cell
-          label="DEX net, 7d"
-          value={formatSignedUsd(netVolume)}
-          hint={`${formatUsd(info?.buyVolumeUsd ?? null, true)} bought · ${formatUsd(info?.sellVolumeUsd ?? null, true)} sold`}
-          tone={netVolume === null ? 'ink' : netVolume >= 0 ? 'mint' : 'rose'}
-        />
-        <Cell
-          label="Staking pool"
-          value={view.holders.stakingShare === null ? '—' : formatRatio(view.holders.stakingShare)}
-          hint={`of supply · ${view.holders.stakingChange7d === null ? '—' : `${view.holders.stakingChange7d >= 0 ? '+' : ''}${Math.round(view.holders.stakingChange7d).toLocaleString('en-US')} NET`} 7d`}
-        />
-        <Cell
-          label="Smart money net"
+    <Section
+      {...head}
+      fresh={
+        <Fresh state="live" stale={snapshot.stale || error !== null}>
+          Saved Nansen readings · updated {formatClock(snapshot.fetchedAt)}
+        </Fresh>
+      }
+      answer={answer || null}
+    >
+      <KpiRow cols={3}>
+        <Kpi
+          lead
+          label="Smart money net · 7d"
           value={formatSignedUsd(flow7d?.smart.netUsd ?? null)}
-          hint={`7d, ${formatCount(flow7d?.smart.wallets ?? null)} wallets · 1d ${formatSignedUsd(flow1d?.smart.netUsd ?? null)}`}
           tone={toneOf(flow7d?.smart.netUsd)}
+          hint={`${formatCount(flow7d?.smart.wallets ?? null)} wallets · 1d ${formatSignedUsd(flow1d?.smart.netUsd ?? null)} · holdings ${signed(smartHeld7d)} NET`}
         />
-        <Cell
-          label="Public figures net"
-          value={formatSignedUsd(flow7d?.publicFigure.netUsd ?? null)}
-          hint={`7d, ${formatCount(flow7d?.publicFigure.wallets ?? null)} wallets · top-PnL ${formatSignedUsd(flow7d?.topPnl.netUsd ?? null)}`}
-          tone={toneOf(flow7d?.publicFigure.netUsd)}
+        <Kpi
+          label="DEX net · 7d"
+          value={formatSignedUsd(dexNet)}
+          tone={toneOf(dexNet)}
+          hint={`${formatUsd(info?.buyVolumeUsd ?? null, true)} bought · ${formatUsd(info?.sellVolumeUsd ?? null, true)} sold`}
         />
-        <Cell
-          label="Smart money holds"
-          value={`${smartHeld.toFixed(1)} NET`}
-          hint={`${snapshot.smartHolders?.length ?? 0} wallets · ${smartHeld7d >= 0 ? '+' : ''}${smartHeld7d.toFixed(1)} NET 7d`}
+        <Kpi
+          label="Loopback borrowers · 7d"
+          value={formatSignedUsd(levered)}
+          tone={toneOf(levered)}
+          hint={`${view.levered.buyers} buying · ${view.levered.sellers} selling in the top 100`}
         />
-      </dl>
+      </KpiRow>
 
-      <div className="border-t border-line px-3 py-3">
-        <p className="text-[11px] uppercase tracking-[0.14em] text-faint">Top 100 buyers and sellers by label, 7d</p>
-        <table className="mt-1.5 w-full text-left text-xs">
-          <thead className="text-faint">
-            <tr>
-              <th className="py-1 font-normal">Group</th>
-              <th className="py-1 text-right font-normal">Wallets</th>
-              <th className="py-1 text-right font-normal">Bought</th>
-              <th className="py-1 text-right font-normal">Sold</th>
-              <th className="py-1 text-right font-normal">Net</th>
+      {adding.length + cutting.length > 0 ? (
+        <div className="mt-3 grid gap-3 *:min-w-0 sm:grid-cols-2">
+          <List title="Smart money adding" rows={adding} tagsFor={tagsFor} />
+          <List title="Smart money cutting" rows={cutting} tagsFor={tagsFor} />
+        </div>
+      ) : null}
+
+      <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Top 100 wallets by label · 7d</p>
+      <div className="overflow-x-auto">
+        <table className="mt-1 w-full min-w-[420px] text-left text-[13px]">
+          <thead className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+            <tr className="border-b border-line">
+              <th className="py-1.5 font-semibold">Group</th>
+              <th className="py-1.5 text-right font-semibold">Wallets</th>
+              <th className="py-1.5 text-right font-semibold">Bought</th>
+              <th className="py-1.5 text-right font-semibold">Sold</th>
+              <th className="py-1.5 text-right font-semibold">Net</th>
             </tr>
           </thead>
           <tbody className="num">
             {view.segments.map((row) => (
-              <tr key={row.key} className="border-t border-line/60">
-                <td className="py-1 font-sans text-ink">{CLASS_LABEL[row.key]}</td>
-                <td className="py-1 text-right">{row.wallets}</td>
-                <td className="py-1 text-right">{formatUsd(row.boughtUsd, true)}</td>
-                <td className="py-1 text-right">{formatUsd(row.soldUsd, true)}</td>
-                <td className={cx('py-1 text-right', row.netUsd >= 0 ? 'text-mint' : 'text-rose')}>{formatSignedUsd(row.netUsd)}</td>
+              <tr key={row.key} className="border-b border-line last:border-b-0">
+                <td className="py-1.5 text-ink">{CLASS_LABEL[row.key]}</td>
+                <td className="py-1.5 text-right">{row.wallets}</td>
+                <td className="py-1.5 text-right">{formatUsd(row.boughtUsd, true)}</td>
+                <td className="py-1.5 text-right">{formatUsd(row.soldUsd, true)}</td>
+                <td className={cx('py-1.5 text-right font-semibold', row.netUsd >= 0 ? 'text-up' : 'text-seal')}>{formatSignedUsd(row.netUsd)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <div className="grid gap-3 border-t border-line px-3 py-3 *:min-w-0 sm:grid-cols-2">
-        <MoverList title="Top net buyers, 7d" rows={buyers} tagsFor={tagsFor} />
-        <MoverList title="Top net sellers, 7d" rows={sellers} tagsFor={tagsFor} />
+      <div className="mt-4 grid gap-3 *:min-w-0 sm:grid-cols-2">
+        <List title="Top net buyers · 7d" rows={buyers} tagsFor={tagsFor} />
+        <List title="Top net sellers · 7d" rows={sellers} tagsFor={tagsFor} />
       </div>
 
-      <div className="border-t border-line px-3 py-3">
-        <p className="text-[11px] uppercase tracking-[0.14em] text-faint">Smart-money DEX trades, 7d</p>
-        <p className="mt-1 text-sm text-ink">
-          {view.tape.traders.length} wallets bought {formatUsd(view.tape.boughtUsd, true)} and sold {formatUsd(view.tape.soldUsd, true)}:{' '}
-          <span className={view.tape.boughtUsd >= view.tape.soldUsd ? 'text-mint' : 'text-rose'}>
-            {formatSignedUsd(view.tape.boughtUsd - view.tape.soldUsd)}
-          </span>
-          {view.tape.trades >= 200 ? <span className="text-xs text-faint"> (first 200 trades only)</span> : null}
-        </p>
-        <div className="mt-2 grid gap-3 *:min-w-0 sm:grid-cols-2">
-          <TraderList title="Adding" rows={accumulators} tagsFor={tagsFor} />
-          <TraderList title="Cutting" rows={distributors} tagsFor={tagsFor} />
-        </div>
-      </div>
+      {snapshot.errors.length > 0 ? <p className="mt-3 text-xs text-warn">Partial read: {snapshot.errors.join('; ')}</p> : null}
 
-      <ul className="space-y-1.5 border-t border-line px-3 py-3 text-xs leading-relaxed text-muted">
-        <li className="border-l border-line pl-2">
-          Loopback borrowers this week: {view.borrowerOverlap.buyers} in the net-buyer lists ({formatUsd(view.borrowerOverlap.buyUsd, true)}),{' '}
-          {view.borrowerOverlap.sellers} in the net-seller lists ({formatUsd(view.borrowerOverlap.sellUsd, true)}).{' '}
-          {view.borrowerOverlap.buyUsd >= view.borrowerOverlap.sellUsd ? 'Levered holders are net adding.' : 'Levered holders are net selling.'}
-        </li>
-        <li className="border-l border-line pl-2">
-          Free float is about {view.holders.freeFloat === null ? '—' : `${Math.round(view.holders.freeFloat).toLocaleString('en-US')} NET`}. The ten largest non-pool holders own{' '}
-          {view.holders.top10FreeShare === null ? '—' : formatRatio(view.holders.top10FreeShare)} of it. In the top 300, {view.holders.grew7d} addresses grew and{' '}
-          {view.holders.shrank7d} shrank this week.
-        </li>
-        <li className="border-l border-line pl-2">
-          Labels are Nansen’s. “Smart money” means 🤓 labels. Most volume comes from unlabeled wallets. The staking pool trades too, so its buys and sells are protocol flow, not a holder.
-        </li>
-        {snapshot.errors.length > 0 ? <li className="border-l border-amber pl-2 text-amber">Partial read: {snapshot.errors.join('; ')}</li> : null}
-      </ul>
-    </section>
+      <Details summary="Holders and float">
+        <KpiRow>
+          <Kpi label="Holders" value={formatCount(info?.holders ?? null)} />
+          <Kpi
+            label="Staking pool"
+            value={formatRatio(view.holders.stakingShare)}
+            hint={`of supply · ${view.holders.stakingChange7d === null ? '—' : signed(view.holders.stakingChange7d)} NET 7d`}
+          />
+          <Kpi label="Free float" value={view.holders.freeFloat === null ? '—' : `${Math.round(view.holders.freeFloat).toLocaleString('en-US')} NET`} />
+          <Kpi
+            label="Top 10 of float"
+            value={formatRatio(view.holders.top10FreeShare)}
+            hint={`${view.holders.grew7d} grew · ${view.holders.shrank7d} shrank in 7d`}
+          />
+        </KpiRow>
+      </Details>
+    </Section>
   )
 }
 
-function toneOf(value: number | null | undefined): 'ink' | 'mint' | 'rose' {
-  if (value == null || !Number.isFinite(value)) return 'ink'
-  return value >= 0 ? 'mint' : 'rose'
+function toneOf(value: number | null | undefined): 'up' | 'down' | undefined {
+  if (value == null || !Number.isFinite(value) || value === 0) return undefined
+  return value > 0 ? 'up' : 'down'
 }
 
-function MoverList({ title, rows, tagsFor }: { title: string; rows: NetMover[]; tagsFor: (address: string) => string[] }) {
+function signed(value: number): string {
+  return `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString('en-US', { maximumFractionDigits: 1 })}`
+}
+
+function List({ title, rows, tagsFor }: { title: string; rows: Row[]; tagsFor: (address: string) => string[] }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-[0.14em] text-faint">{title}</p>
-      <ul className="mt-1 space-y-1 text-xs">
-        {rows.length === 0 ? <li className="text-muted">None in the top 100.</li> : null}
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">{title}</p>
+      <ul className="mt-1 text-[13px]">
+        {rows.length === 0 ? <li className="py-1.5 text-muted">None.</li> : null}
         {rows.map((row) => (
-          <li key={row.address} className="flex items-baseline justify-between gap-2">
+          <li key={row.address} className="flex items-center justify-between gap-3 border-b border-line py-1.5 last:border-b-0">
             <Who address={row.address} label={row.label} tags={tagsFor(row.address)} />
-            <span className={cx('num shrink-0', row.netUsd >= 0 ? 'text-mint' : 'text-rose')}>{formatSignedUsd(row.netUsd)}</span>
+            <span className={cx('num shrink-0 font-semibold', row.netUsd >= 0 ? 'text-up' : 'text-seal')}>{formatSignedUsd(row.netUsd)}</span>
           </li>
         ))}
       </ul>
-    </div>
-  )
-}
-
-function TraderList({
-  title,
-  rows,
-  tagsFor,
-}: {
-  title: string
-  rows: Array<{ address: string; label: string | null; netUsd: number; trades: number }>
-  tagsFor: (address: string) => string[]
-}) {
-  return (
-    <div>
-      <p className="text-[11px] text-faint">{title}</p>
-      <ul className="mt-1 space-y-1 text-xs">
-        {rows.length === 0 ? <li className="text-muted">None.</li> : null}
-        {rows.map((row) => (
-          <li key={row.address} className="flex items-baseline justify-between gap-2">
-            <Who address={row.address} label={row.label} tags={tagsFor(row.address)} />
-            <span className={cx('num shrink-0', row.netUsd >= 0 ? 'text-mint' : 'text-rose')}>
-              {formatSignedUsd(row.netUsd)} <span className="text-faint">· {row.trades}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function Who({ address, label, tags }: { address: string; label: string | null; tags: string[] }) {
-  const kind = labelClass(label)
-  return (
-    <span className="min-w-0 truncate">
-      <a className="num text-cyan hover:underline" href={`https://robinhoodchain.blockscout.com/address/${address}`} target="_blank" rel="noreferrer">
-        {shortAddress(address)}
-      </a>
-      {tags.map((tag) => (
-        <span key={tag} className="ml-1.5 rounded border border-amber/50 px-1 text-[10px] text-amber">
-          {tag}
-        </span>
-      ))}
-      {label ? <span className={cx('ml-1.5', LABEL_TONE[kind ?? 'other'])}>{label}</span> : null}
-    </span>
-  )
-}
-
-function Cell({ label, value, hint, tone = 'ink' }: { label: string; value: string; hint: ReactNode; tone?: 'ink' | 'rose' | 'mint' }) {
-  const color = { ink: 'text-ink', rose: 'text-rose', mint: 'text-mint' }[tone]
-  return (
-    <div className="bg-panel px-3 py-2.5">
-      <dt className="text-[11px] uppercase tracking-[0.14em] text-faint">{label}</dt>
-      <dd className={cx('num mt-1 text-base', color)}>{value}</dd>
-      <dd className="text-[11px] leading-snug text-muted">{hint}</dd>
     </div>
   )
 }
