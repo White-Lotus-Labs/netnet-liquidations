@@ -148,13 +148,25 @@ export default function App() {
 
   return (
     <div className="min-h-svh">
-      <header className="topbar border-b border-[#f0d0a12e] bg-[linear-gradient(#24170d96,#24170d00)] text-[#f6e6c8]">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 md:min-h-[78px] md:px-[clamp(22px,3vw,50px)]">
+      <div className="backdrop" aria-hidden="true">
+        <img
+          src="/images/tea-shop-exterior.webp"
+          srcSet="/images/tea-shop-exterior-780w.webp 780w, /images/tea-shop-exterior.webp 1280w"
+          sizes="100vw"
+          alt=""
+          fetchPriority="high"
+          decoding="async"
+        />
+      </div>
+      <header className="topbar text-[#f6e6c8]">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 md:min-h-[84px] md:px-[clamp(22px,3vw,40px)]">
           <a className="flex items-center gap-2.5 text-chrome no-underline sm:gap-3.5" href={TEA_SHOP_URL}>
-            <svg viewBox="0 0 32 32" aria-hidden="true" className="size-7 flex-none text-[#d4af78] drop-shadow-[0_0_6px_rgb(212_175_120/0.4)]">
-              <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" strokeWidth="2.5" />
-              <path d="M3 16a13 13 0 0 0 26 0z" fill="currentColor" />
-            </svg>
+            <span className="grid size-10 flex-none place-items-center rounded-full border border-[rgb(215_170_105/0.4)] bg-[radial-gradient(rgb(215_170_105/0.16),transparent_70%)]">
+              <svg viewBox="0 0 32 32" aria-hidden="true" className="size-5 text-[#d7aa69]">
+                <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                <path d="M3 16a13 13 0 0 0 26 0z" fill="currentColor" />
+              </svg>
+            </span>
             <span className="flex flex-col gap-0.5 whitespace-nowrap font-display text-lg leading-[1.1] font-semibold tracking-[0.005em] sm:text-[22px]">
               Iroh&apos;s Tea Shop
               <small className="hidden font-sans text-[9.5px] leading-[1.3] font-semibold tracking-[0.22em] text-[rgb(243_234_217/0.55)] uppercase sm:block">
@@ -181,8 +193,8 @@ export default function App() {
             >
               Refresh
             </button>
-            <a className={cx(CHROME_PILL, 'h-8 px-3 sm:h-11 sm:px-5 sm:text-sm')} href={THESIS_DESK_URL} target="_blank" rel="noreferrer">
-              NetNet in the Thesis Desk ↗
+            <a className={cx(CHROME_PILL, 'h-8 px-3')} href={TEA_SHOP_URL} target="_blank" rel="noreferrer">
+              Enter the tea shop ↗
             </a>
           </div>
         </div>
@@ -241,6 +253,7 @@ export default function App() {
               depository {shortAddress(ADDRESSES.bondDepository)}. Polls every {Math.round(POLL_MS / 1000)}s. No wallet, no orders.
             </p>
             <p className="flex flex-wrap gap-x-3 gap-y-1">
+              <FooterLink href={THESIS_DESK_URL}>NetNet in the Thesis Desk</FooterLink>
               <FooterLink href={LINKS.morphoMarket}>Morpho market</FooterLink>
               <FooterLink href={LINKS.creditVault}>Credit vault</FooterLink>
               <FooterLink href={LINKS.pendle}>Pendle</FooterLink>
