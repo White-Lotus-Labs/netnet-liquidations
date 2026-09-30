@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { cleanLabel, labelClass } from '../lib/flows.ts'
 import { cx } from '../lib/format.ts'
+import { protocolLabel } from '../lib/protocol.ts'
 
 /** Evidence card: seal, eyebrow, serif title with an italic accent, then one lead answer and the detail. */
 export function Section(props: {
@@ -201,10 +202,11 @@ const LABEL_TONE: Record<string, string> = {
 const ICON_ACTION =
   'inline-grid size-[26px] flex-none cursor-pointer place-items-center rounded-[5px] border border-transparent text-muted transition-colors duration-[160ms] ease-lift hover:border-line hover:bg-[rgb(255_250_238/0.7)] hover:text-brocade'
 
-/** Wallet cell: short address, cleaned Nansen label, tags, copy, and a Nansen profiler link. */
+/** Wallet cell: short address, label (NetNet's registry name wins over Nansen's), tags, copy, and a Nansen profiler link. */
 export function Who(props: { address: string; label?: string | null; tags?: string[] }) {
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
-  const name = cleanLabel(props.label)
+  const protocol = protocolLabel(props.address)
+  const name = protocol ?? cleanLabel(props.label)
   const tone = LABEL_TONE[labelClass(props.label) ?? ''] ?? 'border-line text-muted'
   const flash = (next: 'copied' | 'failed') => {
     setCopy(next)
@@ -226,6 +228,11 @@ export function Who(props: { address: string; label?: string | null; tags?: stri
         <span title={name} className={cx('max-w-[16rem] truncate rounded-full border bg-[rgb(255_250_238/0.7)] px-2 py-px text-[11.5px] font-semibold', tone)}>
           {name}
         </span>
+      ) : null}
+      {protocol ? (
+        <Chip tone="labelled" title="Address from NetNet's own contract registry">
+          Protocol
+        </Chip>
       ) : null}
       {props.tags?.map((tag) => (
         <Chip key={tag} tone={tag.startsWith('Sold') ? 'sell' : 'neutral'}>

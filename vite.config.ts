@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const zeroxKey = env.ZEROX_API_KEY || env.VITE_ZEROX_API_KEY || ''
   // Server-only. nansen.mjs and bonds.mjs read process.env; never inline these into the bundle.
-  for (const name of ['NANSEN_API_KEY', 'NANSEN_TTL_MINUTES', 'BONDS_TTL_SECONDS', 'BONDS_CACHE_FILE']) {
+  for (const name of ['NANSEN_API_KEY', 'NANSEN_TTL_MINUTES', 'BONDS_TTL_SECONDS', 'BONDS_DEX_TTL_MINUTES', 'BONDS_CACHE_FILE', 'BONDS_BLOCK_RPCS']) {
     if (env[name]) process.env[name] ??= env[name]
   }
   return {

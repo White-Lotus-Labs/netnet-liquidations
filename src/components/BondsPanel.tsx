@@ -1,43 +1,91 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   COHORT_LABEL,
+  GROUP_INFO,
+  SOURCES,
+  SOURCE_LABEL,
+  V3_LAUNCH,
   bondBuyers,
   bondCohort,
   bondDynamics,
   bondHeadline,
+  bondOutcomeLine,
   bondSummary,
+  buyersCsv,
   epochSeries,
+  sourceStarts,
+  walletGroups,
+  type BondBuyer,
   type BondCohort,
   type BondFeed,
+  type BondGroup,
+  type BondOutcome,
+  type BondSource,
   type BondSummary,
+  type BondWindow,
   type EpochRow,
 } from '../lib/bonds.ts'
-import { cx, formatClock, formatCount, formatRatio, formatUsd } from '../lib/format.ts'
-import { Fresh, Kpi, KpiRow, Progress, Section, Segmented, Who } from './ui.tsx'
+import { cx, formatClock, formatCount, formatRatio, formatSignedUsd, formatUsd } from '../lib/format.ts'
+import { BondChart, type Layer, type Marker } from './BondChart.tsx'
+import { Details, Fresh, Kpi, KpiRow, Progress, Section, Segmented, Who } from './ui.tsx'
 
-type Period = '7d' | '30d' | 'all'
-
-const PERIODS: ReadonlyArray<{ value: Period; label: string }> = [
+const WINDOWS: ReadonlyArray<{ value: BondWindow; label: string }> = [
+  { value: '24h', label: '24h' },
   { value: '7d', label: '7d' },
+  { value: '14d', label: '14d' },
   { value: '30d', label: '30d' },
   { value: 'all', label: 'All' },
 ]
-const DAYS: Record<Period, number | null> = { '7d': 7, '30d': 30, all: null }
-const SPAN: Record<Period, string> = { '7d': '7d', '30d': '30d', all: 'all time' }
-const ORDER = Object.keys(COHORT_LABEL) as BondCohort[] // bottom of the stack first
-// Categories, so no seal red. Unlabelled is a hatch, "not read yet" a dashed paper box.
-const FILL: Record<BondCohort, string> = {
-  smart: 'bg-jade',
-  public: 'bg-lotus',
-  hl: 'bg-gold-ink',
-  labelled: 'bg-muted/55',
-  unlabelled: 'hatch',
-  unread: 'border border-dashed border-[rgb(74_47_29/0.45)] bg-paper-deep',
+const SPAN: Record<BondWindow, string> = { '24h': '24h', '7d': '7d', '14d': '14d', '30d': '30d', all: 'all time' }
+
+type ColorBy = 'group' | 'source'
+const COLOR_BY: ReadonlyArray<{ value: ColorBy; label: string }> = [
+  { value: 'group', label: 'Buyer group' },
+  { value: 'source', label: 'Source' },
+]
+
+// Bottom of the stack first: what buyers kept, then what left. Groups are categories, so seal red never marks one.
+const GROUP_ORDER: BondGroup[] = ['protocol', 'strong', 'trimmer', 'looper', 'new', 'mixed', 'mover', 'left', 'weak', 'mercenary', 'arbitrageur', 'unknown']
+const GROUP_PAINT: Record<BondGroup, string> = {
+  protocol: 'var(--color-ink)',
+  strong: 'var(--color-jade)',
+  trimmer: 'rgb(44 110 82 / 0.42)',
+  looper: 'var(--color-lotus)',
+  new: 'rgb(26 60 95 / 0.55)',
+  mixed: 'rgb(74 47 29 / 0.2)',
+  mover: 'rgb(101 86 63 / 0.45)',
+  left: 'rgb(101 86 63 / 0.45)',
+  weak: 'var(--color-rod)',
+  mercenary: 'var(--color-gold)',
+  arbitrageur: 'var(--color-gold-ink)',
+  unknown: 'hatch',
 }
+const SOURCE_PAINT: Record<BondSource, string> = { 0: 'var(--color-lotus)', 1: 'var(--color-gold-ink)', 2: 'var(--color-gold)', 3: 'var(--color-jade)', 4: 'var(--color-rod)' }
+// Short enough for the tooltip. The depository mints at bond time; v3 sells NET the manager sleeve bought back.
+const SOURCE_NAME: Record<BondSource, string> = { 0: 'Depository · minted', 1: SOURCE_LABEL[1], 2: SOURCE_LABEL[2], 3: 'v3 desk · buybacks', 4: SOURCE_LABEL[4] }
+
+// What the window's buyers did with the NET. Same paints as the groups they feed; "Sold on DEX" is a direction, so seal.
+const OUTCOME: ReadonlyArray<{ key: keyof BondOutcome; name: string; paint: string }> = [
+  { key: 'vesting', name: 'Vesting', paint: GROUP_PAINT.new },
+  { key: 'staked', name: 'Staked', paint: GROUP_PAINT.strong },
+  { key: 'wrapped', name: 'Wrapped', paint: GROUP_PAINT.trimmer },
+  { key: 'looped', name: 'Looped', paint: GROUP_PAINT.looper },
+  { key: 'liquid', name: 'Liquid', paint: 'rgb(33 25 17 / 0.55)' },
+  { key: 'sold', name: 'Sold on DEX', paint: 'var(--color-seal)' },
+  { key: 'moved', name: 'Moved out', paint: GROUP_PAINT.mover },
+  { key: 'left', name: 'Left the wallet', paint: GROUP_PAINT.left },
+  { key: 'unknown', name: 'Not read yet', paint: 'hatch' },
+]
+const KEPT = ['vesting', 'staked', 'wrapped', 'looped', 'liquid'] as const
+
 const LABELS_OFF = 'Nansen labels are off on this server.'
 const SUBHEAD = 'text-[10px] font-semibold uppercase tracking-[0.12em] text-muted'
+const CARD_TITLE = 'text-[10.5px] font-bold uppercase tracking-[0.16em] text-brocade'
+const CARD = 'rounded-md border border-line bg-[rgb(255_252_243/0.5)] px-3 py-3 sm:px-4'
 const TH = 'px-2 pb-1.5 font-semibold'
 const TD = 'px-2 py-1.5'
+const BUTTON =
+  'inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-[3px] border border-[rgb(74_47_29/0.32)] bg-[rgb(255_252_243/0.6)] px-3 text-ink transition-colors duration-[160ms] ease-lift hover:border-accent/60'
 const DAY = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Warsaw', day: 'numeric', month: 'short' })
 const DAY_TIME = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Warsaw', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
@@ -54,7 +102,9 @@ export function BondsPanel({
   sellers: Set<string>
   labels: Map<string, string>
 }) {
-  const [period, setPeriod] = useState<Period>('7d')
+  const [period, setPeriod] = useState<BondWindow>('7d')
+  const [colorBy, setColorBy] = useState<ColorBy>('group')
+  const [showPrice, setShowPrice] = useState(false)
   const [expanded, setExpanded] = useState(false)
   // Wall clock for the epoch countdown only. The model uses the feed's own time, so it stays consistent with its data.
   const [clock, setClock] = useState(0)
@@ -68,15 +118,45 @@ export function BondsPanel({
     if (!feed || feed.status !== 'ready') return null
     const now = Math.max(feed.headTime ?? 0, Math.floor(feed.fetchedAt / 1000))
     const cohortOf = (address: string) => bondCohort(address, feed, labels)
-    const days = DAYS[period]
-    const since = days === null ? 0 : now - days * 86_400
-    const summary = bondSummary(feed, { since, now, cohortOf, borrowers, sellers })
-    const launch = days === null ? summary : bondSummary(feed, { since: 0, now, cohortOf })
-    const buyers = bondBuyers(feed, { since, cohortOf, borrowers, sellers, extraLabels: labels })
+    const summary = bondSummary(feed, { window: period, now, cohortOf, borrowers, sellers })
+    const launch = period === 'all' ? summary : bondSummary(feed, { window: 'all', now, cohortOf })
+    const buyers = bondBuyers(feed, { window: period, now, cohortOf, borrowers, sellers, extraLabels: labels })
+    const groups = walletGroups(feed, now)
     // The completed epochs of the window, then the open one.
-    const epochs = epochSeries(feed, { fromEpoch: summary.current.epoch - summary.epochsInWindow, toEpoch: summary.current.epoch, cohortOf })
-    return { now, summary, buyers, epochs, dynamics: bondDynamics(summary, launch, buyers) }
+    const epochs = epochSeries(feed, {
+      fromEpoch: summary.current.epoch - summary.epochsInWindow,
+      toEpoch: summary.current.epoch,
+      cohortOf,
+      groupOf: (address) => groups.get(address) ?? 'unknown',
+    })
+    const epochAt = (t: number) => Math.floor((t - feed.startTime) / feed.epochSeconds)
+    const starts = sourceStarts(feed)
+    const markers: Marker[] = [
+      ...([4, 1, 2] as const).flatMap((src): Marker[] => {
+        const start = starts[src]
+        return start === null ? [] : [{ epoch: epochAt(start), label: SOURCE_LABEL[src], tone: 'muted' }]
+      }),
+      { epoch: epochAt(V3_LAUNCH.at), label: 'v3 · bonds from buybacks, no mint', short: 'v3 · buybacks', tone: 'seal' },
+    ]
+    return { now, summary, launch, buyers, epochs, markers, dynamics: bondDynamics(summary, launch, buyers) }
   }, [feed, period, labels, borrowers, sellers])
+
+  const layers = useMemo((): Layer[] => {
+    const rows = view?.epochs ?? []
+    return colorBy === 'group'
+      ? GROUP_ORDER.filter((group) => rows.some((row) => row.byGroup[group] > 0)).map((group) => ({
+          key: group,
+          name: GROUP_INFO[group].name,
+          paint: GROUP_PAINT[group],
+          value: (row: EpochRow) => row.byGroup[group],
+        }))
+      : SOURCES.filter((src) => rows.some((row) => row.bySource[src] > 0)).map((src) => ({
+          key: String(src),
+          name: SOURCE_NAME[src],
+          paint: SOURCE_PAINT[src],
+          value: (row: EpochRow) => row.bySource[src],
+        }))
+  }, [view, colorBy])
 
   const head = { id: 'bonds', testId: 'bonds-panel', seal: '券', eyebrow: 'NetNet bonds · Onchain + Nansen', title: 'Bond', accent: 'Buyers', meta: <>Powered by <strong>Nansen</strong></> }
 
@@ -92,22 +172,85 @@ export function BondsPanel({
         {feed ? (
           <>
             {progress && progress.total > 0 ? <Progress value={progress.done / progress.total} label={`Bond history: ${progress.step}`} /> : null}
-            <p className="mt-2 text-xs text-muted">The first full read of the chain takes about 20 minutes. This section checks again every 10 seconds.</p>
+            <p className="mt-2 text-xs text-muted">The first full read of the chain takes a few minutes. This section checks again every 10 seconds.</p>
           </>
         ) : null}
       </Section>
     )
   }
 
-  const { now, summary, buyers, epochs, dynamics } = view
-  const { current, totals, cohorts } = summary
+  const { now, summary, launch, buyers, epochs, markers, dynamics } = view
+  const { current, totals, cohorts, buyback } = summary
   const span = SPAN[period]
   const allTime = period === 'all'
   const failed = feed.errors.filter((message) => message !== LABELS_OFF)
-  const top = buyers.slice(0, expanded ? 50 : 10)
+  const top = expanded ? buyers : buyers.slice(0, 10)
   const { bondPrice, twap } = feed.live
   const discount = summary.discount
   const tickNow = Math.max(now, clock)
+  const hasDex = summary.outcome.sold !== null
+  const hasPrice = (feed.price?.length ?? 0) > 0
+  const outcome = bondOutcomeLine(summary)
+  // Shares of the NET the chart draws: whole epochs, so the first column can start a few hours before the window.
+  const drawn = epochs.reduce((sum, row) => sum + row.net, 0)
+  const legend = layers.map((layer) => ({ ...layer, share: drawn > 0 ? epochs.reduce((sum, row) => sum + layer.value(row), 0) / drawn : 0 }))
+
+  const tip = (row: EpochRow, open: boolean) => (
+    <>
+      <p>
+        Epoch {row.epoch} · {DAY_TIME.format(row.opensAt * 1000)}
+      </p>
+      <p className="font-medium text-paper/80">
+        {fixed(row.net, 1)} NET bonded{row.net > row.sold ? ` · ${fixed(row.net - row.sold, 1)} from desks` : ''}
+      </p>
+      <p className="font-medium text-paper/80">
+        {row.cap === null ? '' : `Cap ${fixed(row.cap, 1)} · `}
+        {epochStatus(row, open, current.closesAt, tickNow)}
+      </p>
+      {row.net > 0 ? (
+        <ul className="mt-1 space-y-px border-t border-paper/20 pt-1">
+          {[...layers].reverse().flatMap((layer) => {
+            const value = layer.value(row)
+            return value > 0
+              ? [
+                  <li key={layer.key} className="flex items-center gap-1.5">
+                    <Swatch paint={layer.paint} />
+                    <span className="min-w-0 flex-1 truncate">{layer.name}</span>
+                    <span>
+                      {fixed(value, 1)} · {formatRatio(value / row.net)}
+                    </span>
+                  </li>,
+                ]
+              : []
+          })}
+        </ul>
+      ) : null}
+      <p className="mt-1 border-t border-paper/20 pt-1 font-medium text-paper/80">
+        Price {fixed(row.price, 2)} · bond fill {fixed(row.avgPrice, 2)} USDG
+        <br />
+        {formatCount(row.wallets)} wallets · {formatCount(row.newWallets)} new
+      </p>
+    </>
+  )
+  const describe = (row: EpochRow, open: boolean) => {
+    const split = layers
+      .filter((layer) => layer.value(row) > 0)
+      .map((layer) => `${layer.name} ${formatRatio(layer.value(row) / row.net)}`)
+      .join(', ')
+    return `Epoch ${row.epoch}, opened ${DAY_TIME.format(row.opensAt * 1000)}. ${fixed(row.net, 1)} NET bonded. ${epochStatus(row, open, current.closesAt, tickNow)}.${split ? ` ${split}.` : ''}${
+      row.price !== null ? ` NET price ${fixed(row.price, 2)} USDG.` : ''
+    }`
+  }
+
+  const download = () => {
+    const blob = new Blob([buyersCsv(buyers, period)], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `bond-buyers-${period}-${new Date(now * 1000).toISOString().slice(0, 10)}.csv`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
 
   return (
     <Section
@@ -119,11 +262,11 @@ export function BondsPanel({
           }`}
         </Fresh>
       }
-      answer={bondHeadline(summary)}
+      answer={outcome ? `${bondHeadline(summary)} ${outcome}` : bondHeadline(summary)}
     >
       <Segmented
         label="Bond window"
-        options={PERIODS}
+        options={WINDOWS}
         value={period}
         onChange={(next) => {
           setPeriod(next)
@@ -150,7 +293,7 @@ export function BondsPanel({
             hint={
               <>
                 <div className="mt-1.5">
-                  <Progress value={current.fill} label={`Epoch ${current.epoch}: share of the cap sold`} />
+                  <Progress value={current.fill} label={`Epoch ${current.epoch}: share of the depository cap sold`} />
                 </div>
                 <div className="mt-1">
                   {current.soldOut
@@ -159,145 +302,205 @@ export function BondsPanel({
                       : `Sold out after ${duration(current.soldOutAfter)}`
                     : `Closes in ${duration(current.closesAt - tickNow)}`}
                 </div>
+                <div>
+                  Bond price {fixed(bondPrice, 2)}
+                  {discount === null ? '' : ` · ${formatRatio(Math.abs(discount))} ${discount >= 0 ? 'under' : 'over'} TWAP ${fixed(twap, 2)}`}
+                </div>
               </>
             }
           />
           <Kpi
-            label="Bond price · USDG"
-            value={fixed(bondPrice, 2)}
-            hint={discount === null ? 'TWAP unavailable' : `${formatRatio(Math.abs(discount))} ${discount >= 0 ? 'under' : 'over'} TWAP ${fixed(twap, 2)}`}
-          />
-          <Kpi
             label={`Bonded · ${span}`}
-            value={formatUsd(totals.usdg, true)}
-            hint={`${fixed(totals.net, 0)} NET · ${formatCount(totals.wallets)} wallets${allTime ? '' : ` · ${formatCount(totals.newWallets)} new`}`}
+            value={
+              <>
+                {fixed(totals.net, 0)}
+                <span className="text-[0.7em] text-muted"> NET</span>
+              </>
+            }
+            hint={`${formatUsd(totals.usdg, true)} · ${formatCount(totals.wallets)} wallets${allTime ? '' : ` · ${formatCount(totals.newWallets)} new`}`}
           />
           <Kpi
-            label={`Smart money · ${span}`}
-            value={formatRatio(cohorts.smart.share)}
-            tone="flat"
-            hint={`of bonded NET · ${formatCount(cohorts.smart.wallets)} wallets · ${fixed(cohorts.smart.net, 1)} NET`}
+            label={`Minted vs desk stock · ${span}`}
+            value={
+              <>
+                {fixed(summary.minted, 0)}
+                <span className="text-[0.7em] text-muted"> minted</span>
+              </>
+            }
+            hint={
+              summary.fromInventory > 0
+                ? `${fixed(summary.fromInventory, 0)} NET from desk stock${buyback.v3Sold > 0 ? ` · ${fixed(buyback.v3Sold, 0)} of it from buybacks (v3)` : ''}`
+                : 'No desk sales in this window.'
+            }
+          />
+          <Kpi
+            label={`Sleeve buyback · ${span}`}
+            value={
+              buyback.net > 0 ? (
+                <>
+                  {fixed(buyback.net, 0)}
+                  <span className="text-[0.7em] text-muted"> NET</span>
+                </>
+              ) : (
+                'None'
+              )
+            }
+            tone={buyback.net > 0 ? undefined : 'flat'}
+            hint={
+              buyback.net > 0
+                ? `Bought on the DEX for ${fixed(buyback.usd, 0)} USDG · ${formatCount(buyback.buys)} ${buyback.buys === 1 ? 'buy' : 'buys'}`
+                : 'The manager sleeve bought no NET on the DEX.'
+            }
           />
         </KpiRow>
       </div>
 
-      <div className="mt-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p className={SUBHEAD}>Bonds per epoch · share of cap · {span}</p>
-          <Legend cohorts={cohorts} />
-        </div>
-        <EpochChart key={`${period}-${current.epoch}`} rows={epochs} now={tickNow} closesAt={current.closesAt} span={span} />
-        <p className="mt-2 text-[13px] leading-snug text-ink">{chartLine(summary)}</p>
+      <div className={cx(CARD, 'mt-5')}>
+        <p className={CARD_TITLE}>What buyers did with the NET · {span}</p>
+        <OutcomeBar outcome={summary.outcome} total={totals.net} />
+        <p className="mt-2 text-xs leading-snug text-muted">
+          {hasDex
+            ? 'Sold on DEX comes from Nansen DEX trades since launch. Moved out is NET that left the wallet another way: transfers, other contracts, or exchanges.'
+            : 'DEX sells are not read yet, so NET sold and NET moved show as one part: Left the wallet.'}
+          {feed.holdings ? '' : ' Holdings are not read yet.'}
+        </p>
       </div>
 
-      <div className="mt-5 grid gap-5 *:min-w-0 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <div>
-          <p className={SUBHEAD}>Who bought · {span}</p>
-          <div className="overflow-x-auto">
-            <table className="mt-1 w-full min-w-[380px] border-collapse text-left text-[13px]">
-              <thead className={SUBHEAD}>
-                <tr className="border-b border-line">
-                  <th className={TH}>Group</th>
-                  <th className={cx(TH, 'text-right')}>Wallets</th>
-                  <th className={cx(TH, 'text-right')}>NET</th>
-                  <th className={TH}>Share</th>
-                  <th className={cx(TH, 'text-right')} title="USDG per NET, USDG bonds only">
-                    Avg price
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="num">
-                {totals.wallets === 0 ? (
-                  <tr>
-                    <td colSpan={5} className={cx(TD, 'text-muted')}>
-                      No bonds in this window.
-                    </td>
-                  </tr>
-                ) : null}
-                {ORDER.filter((cohort) => cohorts[cohort].wallets > 0).map((cohort) => (
-                  <tr key={cohort} className="border-b border-line last:border-b-0">
-                    <td className={cx(TD, 'text-ink')}>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Swatch cohort={cohort} />
-                        {COHORT_LABEL[cohort]}
-                      </span>
-                    </td>
-                    <td className={cx(TD, 'text-right')}>{formatCount(cohorts[cohort].wallets)}</td>
-                    <td className={cx(TD, 'text-right font-semibold')}>{fixed(cohorts[cohort].net, 1)}</td>
-                    <td className={TD}>
-                      <span className="flex items-center gap-2">
-                        <span className="block h-1 w-10 flex-none overflow-hidden rounded-full bg-[rgb(74_47_29/0.1)]">
-                          <span className={cx('block h-full rounded-full', FILL[cohort])} style={{ width: `${cohorts[cohort].share * 100}%` }} />
-                        </span>
-                        {formatRatio(cohorts[cohort].share)}
-                      </span>
-                    </td>
-                    <td className={cx(TD, 'text-right')}>{fixed(cohorts[cohort].avgPrice, 2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div data-testid="bond-chart" className="mt-4 rounded-md border border-line border-t-2 border-t-gold bg-[linear-gradient(180deg,rgb(255_251_240/0.78),rgb(255_250_238/0.4))] px-3 pt-3 pb-3 shadow-[inset_0_1px_rgb(255_255_255/0.55)] sm:px-4">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-1 basis-72">
+            <p className={CARD_TITLE}>
+              Bonded NET per epoch · {epochs.length} epochs from {DAY_TIME.format(new Date(epochs[0].opensAt * 1000))}
+            </p>
+            <p className="mt-1 text-[13px] leading-snug text-ink">{chartLine(summary)}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmented label="Color the columns by" options={COLOR_BY} value={colorBy} onChange={setColorBy} />
+            <button
+              type="button"
+              aria-pressed={showPrice && hasPrice}
+              disabled={!hasPrice}
+              title={hasPrice ? 'Show the NET/USDG price on a right axis' : 'Price history is not read yet.'}
+              onClick={() => setShowPrice((value) => !value)}
+              className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-[19px] border border-line bg-[rgb(255_250_238/0.55)] px-3.5 text-[11.5px] font-[650] tracking-[0.02em] text-muted transition-colors duration-[160ms] ease-lift hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-[rgb(138_47_34/0.28)] aria-pressed:bg-accent/12 aria-pressed:text-accent"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.5]">
+                <path d="M1.5 12 5.5 7.5l3 2.5 6-7" />
+              </svg>
+              Price
+            </button>
           </div>
         </div>
+        <ul className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-muted">
+          {legend.map((item) => (
+            <li key={item.key} className="inline-flex items-center gap-1.5">
+              <Swatch paint={item.paint} />
+              {item.name}
+              <span className="num font-semibold text-ink">{formatRatio(item.share)}</span>
+            </li>
+          ))}
+          <li className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="h-px w-3 bg-ink/75" />
+            Depository cap
+          </li>
+        </ul>
+        <BondChart
+          key={period}
+          rows={epochs}
+          layers={layers}
+          markers={markers}
+          price={showPrice && hasPrice ? feed.price : null}
+          epochSeconds={feed.epochSeconds}
+          now={now}
+          label={`Bonded NET per epoch, ${span}, colored by ${colorBy === 'group' ? 'buyer group' : 'bond source'}.`}
+          tip={tip}
+          describe={describe}
+        />
+      </div>
 
+      <div className="mt-5 grid gap-5 *:min-w-0 lg:grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)]">
         <div>
-          <p className={SUBHEAD}>Top bond buyers · {span}</p>
-          <div className="overflow-x-auto">
-            <table className="mt-1 w-full min-w-[560px] border-collapse text-left text-[13px]">
-              <thead className={SUBHEAD}>
-                <tr className="border-b border-line">
-                  <th className={TH}>Who</th>
-                  <th className={cx(TH, 'text-right')}>NET</th>
-                  <th className={cx(TH, 'text-right')}>Share</th>
-                  <th className={cx(TH, 'text-right')}>Epochs</th>
-                  <th className={cx(TH, 'text-right')}>First bond</th>
-                  <th className={cx(TH, 'text-right')} title="NET, sNET, wsNET and unvested bonds held now, against what the wallet's bonds would be worth staked (all time)">
-                    Still holds
-                  </th>
+          <p className={SUBHEAD}>Buyer groups · {span}</p>
+          <GroupTable summary={summary} hasDex={hasDex} />
+        </div>
+        <div>
+          <p className={SUBHEAD}>Nansen labels · {span}</p>
+          <CohortList cohorts={cohorts} />
+          <p className="mt-2 text-[13px] leading-snug text-ink">
+            Nansen smart money: {formatRatio(cohorts.smart.share)} of bonded NET, {walletCount(cohorts.smart.wallets)}.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <p className={SUBHEAD}>Top bond buyers · {span}</p>
+        <div className="overflow-x-auto">
+          <table className="mt-1 w-full min-w-[860px] border-collapse text-left text-[13px]">
+            <thead className={SUBHEAD}>
+              <tr className="border-b border-line">
+                <th className={TH}>Who</th>
+                <th className={TH}>Group</th>
+                <th className={cx(TH, 'text-right')}>Bonded</th>
+                <th className={cx(TH, 'text-right')}>Share</th>
+                <th className={cx(TH, 'text-right')}>Epochs</th>
+                <th className={cx(TH, 'text-right')}>First bond</th>
+                <th className={TH} title="Where the wallet's bonded NET is now, all time: vesting, staked, wrapped, looped, liquid, sold on the DEX, moved out">
+                  Now
+                </th>
+                <th className={cx(TH, 'text-right')} title={`NET sold on the DEX, ${span} (Nansen)`}>
+                  DEX sold
+                </th>
+              </tr>
+            </thead>
+            <tbody className="num">
+              {top.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className={cx(TD, 'text-muted')}>
+                    No bonds in this window.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="num">
-                {top.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className={cx(TD, 'text-muted')}>
-                      No bonds in this window.
-                    </td>
-                  </tr>
-                ) : null}
-                {top.map((buyer) => (
-                  <tr key={buyer.address} className="border-b border-line last:border-b-0 hover:bg-[rgb(184_145_63/0.1)]">
-                    <td className={TD}>
-                      <Who address={buyer.address} label={buyer.label} tags={!allTime && buyer.isNew ? [...buyer.tags, 'New'] : buyer.tags} />
-                    </td>
-                    <td className={cx(TD, 'text-right font-semibold')}>{fixed(buyer.net, 1)}</td>
-                    <td className={cx(TD, 'text-right')}>{formatRatio(buyer.share)}</td>
-                    <td className={cx(TD, 'text-right')}>{buyer.epochs}</td>
-                    <td className={cx(TD, 'whitespace-nowrap text-right text-[11.5px] text-muted')}>{ago(now - buyer.firstAt)}</td>
-                    <td className={cx(TD, 'text-right')}>{kept(buyer.keptRatio)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ) : null}
+              {top.map((buyer, rank) => (
+                <tr key={buyer.address} className="border-b border-line last:border-b-0 hover:bg-[rgb(184_145_63/0.1)]">
+                  <td className={TD}>
+                    <Who address={buyer.address} label={buyer.label} tags={buyerTags(buyer, rank, allTime)} />
+                  </td>
+                  <td className={TD}>
+                    <GroupName group={buyer.group} />
+                  </td>
+                  <td className={cx(TD, 'text-right font-semibold')}>{fixed(buyer.bonded, 1)}</td>
+                  <td className={cx(TD, 'text-right')}>{formatRatio(buyer.share)}</td>
+                  <td className={cx(TD, 'text-right')}>{buyer.epochs}</td>
+                  <td className={cx(TD, 'whitespace-nowrap text-right text-[11.5px] text-muted')}>{ago(now - buyer.firstAt)}</td>
+                  <td className={TD}>
+                    <NowBar buyer={buyer} />
+                  </td>
+                  <td className={cx(TD, 'text-right')}>{buyer.dexSold === null ? '—' : buyer.dexSold > 0 ? fixed(buyer.dexSold, 1) : '0'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold tracking-[0.06em]">
           {buyers.length > 10 ? (
-            <div className="mt-2 text-xs font-semibold tracking-[0.06em]">
-              <button
-                type="button"
-                aria-expanded={expanded}
-                onClick={() => setExpanded((value) => !value)}
-                className="min-h-8 cursor-pointer rounded-[3px] border border-[rgb(74_47_29/0.32)] bg-[rgb(255_252_243/0.6)] px-3 text-ink hover:border-accent/60"
-              >
-                {expanded ? 'Show top 10' : `Show top ${Math.min(50, buyers.length)}`}
-              </button>
-            </div>
+            <button type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} className={BUTTON}>
+              {expanded ? 'Show top 10' : `Show all ${formatCount(buyers.length)}`}
+            </button>
+          ) : null}
+          {buyers.length > 0 ? (
+            <button type="button" onClick={download} className={BUTTON}>
+              <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.4]">
+                <path d="M8 2v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
+              </svg>
+              Download CSV
+            </button>
           ) : null}
         </div>
       </div>
 
       {dynamics.length > 0 ? (
-        <div className="mt-5">
-          <p className={SUBHEAD}>Buying dynamics · {span}</p>
-          <ul className="mt-1.5 space-y-1 text-[13.5px] leading-snug text-ink">
+        <Details summary={`Buying dynamics · ${span}`}>
+          <ul className="space-y-1 text-[13.5px] leading-snug text-ink">
             {dynamics.map((line) => (
               <li key={line} className="flex gap-2">
                 <span aria-hidden="true" className="mt-[0.5em] size-1 flex-none rounded-full bg-gold-ink" />
@@ -305,175 +508,207 @@ export function BondsPanel({
               </li>
             ))}
           </ul>
-        </div>
+        </Details>
       ) : null}
 
-      <p className="mt-4 border-t border-dashed border-line pt-2 text-xs text-muted">
-        Labels come from Nansen. A label does not prove who owns a wallet. Holdings include staked sNET, wrapped wsNET, and unvested bonds.
-      </p>
+      <div className="mt-4 space-y-0.5 border-t border-dashed border-line pt-2 text-xs leading-snug text-muted">
+        <p>Labels come from Nansen and from NetNet&apos;s own contract registry. A label does not prove who owns a wallet.</p>
+        <p>Groups use DEX sells from Nansen and on-chain balances. A wallet can hold NET it bought elsewhere; the split caps at what bonding explains.</p>
+        <p>
+          Desk stock is NET deposited into the bond desks. Since launch, {fixed(launch.buyback.depositedMinted, 0)} of {fixed(launch.buyback.deposited, 0)} NET was minted
+          in the deposit transaction. Only the v3 desk sells NET that the manager sleeve bought back on the DEX.
+        </p>
+      </div>
     </Section>
   )
 }
 
-function Swatch({ cohort }: { cohort: BondCohort }) {
-  // Paper backing keeps the hatch and the dashed box visible on the ink tooltip too.
+function Swatch({ paint }: { paint: string }) {
+  // Paper backing keeps the hatch and the pale tints visible on the ink tooltip too.
   return (
     <span aria-hidden="true" className="inline-block flex-none rounded-[2px] bg-paper p-px">
-      <span className={cx('block size-2.5 rounded-[1px]', FILL[cohort])} />
+      <span className={cx('block size-2.5 rounded-[1px]', paint === 'hatch' && 'hatch')} style={paint === 'hatch' ? undefined : { background: paint }} />
     </span>
   )
 }
 
-function Legend({ cohorts }: { cohorts: BondSummary['cohorts'] }) {
+function GroupName({ group }: { group: BondGroup }) {
   return (
-    <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11.5px] text-muted">
-      {ORDER.filter((cohort) => cohorts[cohort].net > 0).map((cohort) => (
-        <li key={cohort} className="inline-flex items-center gap-1.5">
-          <Swatch cohort={cohort} />
-          {COHORT_LABEL[cohort]}
-          <span className="num font-semibold text-ink">{formatRatio(cohorts[cohort].share)}</span>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-ink" title={GROUP_INFO[group].info}>
+      <Swatch paint={GROUP_PAINT[group]} />
+      {GROUP_INFO[group].name}
+    </span>
+  )
+}
+
+function OutcomeBar({ outcome, total }: { outcome: BondOutcome; total: number }) {
+  const hasDex = outcome.sold !== null
+  const parts = OUTCOME.filter((part) => (hasDex ? part.key !== 'left' : part.key !== 'sold' && part.key !== 'moved'))
+    .map((part) => ({ ...part, net: outcome[part.key] ?? 0 }))
+    .filter((part) => part.net > 0)
+  if (total <= 0 || parts.length === 0) return <p className="mt-2 text-[13px] text-muted">No bonds in this window.</p>
+  return (
+    <>
+      <div
+        role="img"
+        aria-label={parts.map((part) => `${part.name} ${formatRatio(part.net / total)}`).join(', ')}
+        className="mt-2.5 flex h-3 gap-[2px] overflow-hidden rounded-full bg-[rgb(74_47_29/0.12)]"
+      >
+        {parts.map((part) => (
+          <span key={part.key} className={cx('block min-w-[2px]', part.paint === 'hatch' && 'hatch')} style={{ flexGrow: part.net, flexBasis: 0, background: part.paint === 'hatch' ? undefined : part.paint }} />
+        ))}
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted">
+        {parts.map((part) => (
+          <li key={part.key} className={cx('inline-flex items-center gap-1.5', part.key === 'sold' && 'text-seal')}>
+            <Swatch paint={part.paint} />
+            {part.name}
+            <span className={cx('num font-semibold', part.key === 'sold' ? 'text-seal' : 'text-ink')}>{formatRatio(part.net / total)}</span>
+            <span className="num">{fixed(part.net, 0)} NET</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+function GroupTable({ summary, hasDex }: { summary: BondSummary; hasDex: boolean }) {
+  const rows = GROUP_ORDER.filter((group) => summary.groups[group].wallets > 0)
+  return (
+    <div className="overflow-x-auto">
+      <table className="mt-1 w-full min-w-[680px] border-collapse text-left text-[13px]">
+        <thead className={SUBHEAD}>
+          <tr className="border-b border-line">
+            <th className={TH}>Group</th>
+            <th className={cx(TH, 'text-right')}>Wallets</th>
+            <th className={cx(TH, 'text-right')}>Bonded</th>
+            <th className={TH}>Share</th>
+            <th className={cx(TH, 'text-right')} title="USDG per NET the group paid in the window">
+              Avg price
+            </th>
+            <th className={cx(TH, 'text-right')} title="Share of the group's bonded NET sold on the DEX (Nansen, since launch)">
+              Sold
+            </th>
+            <th className={cx(TH, 'text-right')} title="Share of the group's bonded NET still in the wallet: vesting, staked, wrapped, looped, or liquid">
+              Still held
+            </th>
+            <th
+              className={cx(TH, 'text-right')}
+              title="All time: DEX sell proceeds minus the bond cost of the NET sold. A wallet that also bought NET on the DEX counts those sells too."
+            >
+              Realized PnL
+            </th>
+          </tr>
+        </thead>
+        <tbody className="num">
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={8} className={cx(TD, 'text-muted')}>
+                No bonds in this window.
+              </td>
+            </tr>
+          ) : null}
+          {rows.map((group) => {
+            const row = summary.groups[group]
+            return (
+              <tr key={group} className="border-b border-line align-top last:border-b-0">
+                <td className={TD}>
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-ink">
+                    <Swatch paint={GROUP_PAINT[group]} />
+                    {GROUP_INFO[group].name}
+                  </span>
+                  <span className="mt-0.5 block text-[11.5px] leading-snug font-medium text-muted">{GROUP_INFO[group].info}</span>
+                </td>
+                <td className={cx(TD, 'text-right')}>{formatCount(row.wallets)}</td>
+                <td className={cx(TD, 'text-right font-semibold')}>{fixed(row.net, 1)}</td>
+                <td className={TD}>
+                  <span className="flex items-center gap-2">
+                    <span className="block h-1 w-10 flex-none overflow-hidden rounded-full bg-[rgb(74_47_29/0.1)]">
+                      <span className="block h-full rounded-full bg-ink/70" style={{ width: `${row.share * 100}%` }} />
+                    </span>
+                    {formatRatio(row.share)}
+                  </span>
+                </td>
+                <td className={cx(TD, 'text-right')}>{fixed(row.avgPrice, 2)}</td>
+                <td className={cx(TD, 'text-right')}>{hasDex ? formatRatio(row.sold) : '—'}</td>
+                <td className={cx(TD, 'text-right')}>{formatRatio(row.held)}</td>
+                <td className={cx(TD, 'text-right font-semibold', row.pnl === null || row.pnl === 0 ? 'text-muted' : row.pnl > 0 ? 'text-up' : 'text-seal')}>
+                  {row.pnl === null ? '—' : formatSignedUsd(row.pnl)}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function CohortList({ cohorts }: { cohorts: BondSummary['cohorts'] }) {
+  const keys = (Object.keys(COHORT_LABEL) as BondCohort[]).filter((cohort) => cohorts[cohort].wallets > 0)
+  if (keys.length === 0) return <p className="mt-1 text-[13px] text-muted">No bonds in this window.</p>
+  const lead = Math.max(...keys.map((cohort) => cohorts[cohort].share))
+  return (
+    <ul className="mt-1 divide-y divide-line text-[13px]">
+      {keys.map((cohort) => (
+        <li key={cohort} className="num grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-1.5">
+          <span className="min-w-0">
+            <span className="block truncate text-ink">{COHORT_LABEL[cohort]}</span>
+            <span className="mt-1 block h-1 overflow-hidden rounded-full bg-[rgb(74_47_29/0.1)]">
+              <span className="block h-full rounded-full bg-ink/70" style={{ width: `${lead > 0 ? (cohorts[cohort].share / lead) * 100 : 0}%` }} />
+            </span>
+          </span>
+          <span className="text-right">
+            <span className="font-semibold text-ink">{formatRatio(cohorts[cohort].share)}</span>
+            <span className="block text-[11px] text-muted">{walletCount(cohorts[cohort].wallets)}</span>
+          </span>
         </li>
       ))}
-      <li className="inline-flex items-center gap-1.5">
-        <span aria-hidden="true" className="h-px w-3 bg-ink/70" />
-        Epoch cap
-      </li>
     </ul>
   )
 }
 
-/** One column per epoch, stacked by cohort, as a share of the epoch's cap. Arrow keys move between columns. */
-function EpochChart({ rows, now, closesAt, span }: { rows: EpochRow[]; now: number; closesAt: number; span: string }) {
-  const last = rows.length - 1
-  const [hover, setHover] = useState<number | null>(null)
-  const [cursor, setCursor] = useState(last)
-  const [focused, setFocused] = useState(false)
-  const plot = useRef<HTMLDivElement>(null)
-  const active = hover ?? (focused ? cursor : null)
-  const gap = rows.length <= 40 ? 'gap-[3px] sm:gap-1' : rows.length <= 120 ? 'gap-px' : 'gap-0 sm:gap-px'
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const moves: Record<string, number> = { ArrowLeft: cursor - 1, ArrowRight: cursor + 1, Home: 0, End: last }
-    if (!(event.key in moves)) return
-    event.preventDefault()
-    setHover(null)
-    const next = Math.max(0, Math.min(last, moves[event.key]))
-    setCursor(next)
-    const column = plot.current?.children[next]
-    if (column instanceof HTMLElement) column.focus()
-  }
-
-  if (rows.length === 0) return null
-  const tip = active === null ? null : rows[active]
-  const center = active === null ? 0 : ((active + 0.5) / rows.length) * 100
-  // Anchor the slip to the column, sliding it so it never leaves the chart box.
-  const tipStyle: CSSProperties = { left: `${center}%`, transform: `translateX(-${center}%)` }
-
+function NowBar({ buyer }: { buyer: BondBuyer }) {
+  const split = buyer.split
+  if (!split) return <span className="text-muted">—</span>
+  // Without DEX sells, `left` stands in for sold and moved.
+  const keys = split.sold === null ? [...KEPT, 'left' as const] : [...KEPT, 'sold' as const, 'moved' as const]
+  const parts = OUTCOME.flatMap((part) => {
+    const share = (keys as string[]).includes(part.key) ? (split[part.key as (typeof keys)[number]] ?? 0) : 0
+    return share > 0 ? [{ ...part, share }] : []
+  })
+  const text = parts.map((part) => `${part.name} ${formatRatio(part.share)}`).join(' · ')
   return (
-    <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2">
-      <div aria-hidden="true" className="num flex h-[140px] flex-col justify-between text-right text-[10px] leading-none text-muted">
-        <span>Cap</span>
-        <span>50%</span>
-        <span>0</span>
-      </div>
-      <div className="relative">
-        {tip ? <Tip row={tip} status={epochStatus(tip, active === last, closesAt, now)} style={tipStyle} /> : null}
-        <div
-          ref={plot}
-          role="group"
-          aria-label={`Bonds per epoch, ${span}, as a share of each epoch's cap. Arrow keys move between epochs.`}
-          onKeyDown={onKeyDown}
-          onMouseLeave={() => setHover(null)}
-          className={cx(
-            'flex h-[140px] border-b border-[rgb(74_47_29/0.35)] bg-[repeating-linear-gradient(to_top,rgb(74_47_29/0.12)_0_1px,transparent_1px_25%)]',
-            gap,
-          )}
-        >
-          {rows.map((row, i) => (
-            <div
-              key={row.epoch}
-              role="img"
-              aria-label={describe(row, epochStatus(row, i === last, closesAt, now))}
-              tabIndex={i === cursor ? 0 : -1}
-              data-open={i === last || undefined}
-              onMouseEnter={() => setHover(i)}
-              onFocus={() => {
-                setCursor(i)
-                setFocused(true)
-              }}
-              onBlur={() => setFocused(false)}
-              className="relative flex min-w-0 flex-1 flex-col justify-end data-open:outline-1 data-open:outline-offset-2 data-open:outline-dashed data-open:outline-[rgb(74_47_29/0.35)]"
-            >
-              <span aria-hidden="true" className="absolute inset-x-0 top-0 h-px bg-ink/70" />
-              <span className="flex flex-col-reverse gap-px overflow-hidden rounded-t-[2px]" style={{ height: `${row.fill * 100}%` }}>
-                {ORDER.map((cohort) =>
-                  row.byCohort[cohort] > 0 ? <span key={cohort} className={cx('block min-h-0 basis-0', FILL[cohort])} style={{ flexGrow: row.byCohort[cohort] }} /> : null,
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div aria-hidden="true" className="num mt-1 flex justify-between text-[10px] text-muted">
-          <span>{DAY.format(rows[0].opensAt * 1000)}</span>
-          <span>{DAY.format(rows[Math.floor(last / 2)].opensAt * 1000)}</span>
-          <span>Open</span>
-        </div>
-      </div>
-    </div>
+    <span role="img" aria-label={text} title={text} className="flex h-2 w-24 gap-px overflow-hidden rounded-full bg-[rgb(74_47_29/0.12)]">
+      {parts.map((part) => (
+        <span key={part.key} className={cx('block', part.paint === 'hatch' && 'hatch')} style={{ flexGrow: part.share, flexBasis: 0, background: part.paint === 'hatch' ? undefined : part.paint }} />
+      ))}
+    </span>
   )
 }
 
-function Tip({ row, status, style }: { row: EpochRow; status: string; style: CSSProperties }) {
-  return (
-    <div aria-hidden="true" style={style} className="num pointer-events-none absolute bottom-[calc(100%+8px)] z-10 w-max max-w-[16rem] rounded bg-ink px-2.5 py-2 text-[10.5px] leading-[1.45] font-semibold text-paper">
-      <p>
-        Epoch {row.epoch} · {DAY_TIME.format(row.opensAt * 1000)}
-      </p>
-      <p>
-        {fixed(row.sold, 1)} of {fixed(row.cap, 1)} NET · {formatRatio(row.fill)}
-      </p>
-      <p>{status}</p>
-      <p>
-        {formatCount(row.wallets)} wallets · {formatCount(row.newWallets)} new
-        {row.sold > 0 ? ` · first minute ${formatRatio(row.firstMinuteShare)}` : ''}
-      </p>
-      {row.sold > 0 ? (
-        <ul className="mt-1 border-t border-paper/20 pt-1">
-          {ORDER.filter((cohort) => row.byCohort[cohort] > 0).map((cohort) => (
-            <li key={cohort} className="flex items-center gap-1.5">
-              <Swatch cohort={cohort} />
-              <span className="flex-1">{COHORT_LABEL[cohort]}</span>
-              <span>
-                {fixed(row.byCohort[cohort], 1)} · {formatRatio(row.byCohort[cohort] / row.sold)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  )
+function buyerTags(buyer: BondBuyer, rank: number, allTime: boolean): string[] {
+  const tags: string[] = []
+  if (rank < 10) tags.push('Whale')
+  if (!allTime && buyer.isNew) tags.push('New')
+  return [...tags, ...buyer.tags]
 }
 
 function epochStatus(row: EpochRow, open: boolean, closesAt: number, now: number): string {
   if (row.soldOut && row.soldOutAfter !== null) return `Sold out after ${duration(row.soldOutAfter)}`
   if (open) return `Open · closes in ${duration(closesAt - now)}`
-  return row.sold > 0 ? 'Did not sell out' : 'No bonds'
-}
-
-function describe(row: EpochRow, status: string): string {
-  const split = ORDER.filter((cohort) => row.byCohort[cohort] > 0)
-    .map((cohort) => `${COHORT_LABEL[cohort]} ${formatRatio(row.byCohort[cohort] / row.sold)}`)
-    .join(', ')
-  return `Epoch ${row.epoch}, opened ${DAY_TIME.format(row.opensAt * 1000)}. ${fixed(row.sold, 1)} of ${fixed(row.cap, 1)} NET sold. ${status}. ${formatCount(row.wallets)} wallets.${split ? ` ${split}.` : ''}`
+  return row.sold > 0 ? 'Did not sell out' : 'No depository bonds'
 }
 
 function chartLine(summary: BondSummary): string {
   if (summary.epochsInWindow === 0) return 'No epoch has closed in this window yet.'
   const parts = [`${summary.soldOutCount} of ${summary.epochsInWindow} epochs sold out.`]
   if (summary.medianSoldOutAfter !== null) parts.push(`Median sell-out: ${duration(summary.medianSoldOutAfter)}.`)
-  if (summary.medianFirstMinuteShare !== null) parts.push(`Median first-minute share: ${formatRatio(summary.medianFirstMinuteShare)}.`)
+  if (summary.fromInventory > 0) parts.push(`Bond desks sold ${fixed(summary.fromInventory, 0)} NET more, outside the cap.`)
   return parts.join(' ')
 }
+
+const walletCount = (count: number) => `${formatCount(count)} ${count === 1 ? 'wallet' : 'wallets'}`
 
 function fixed(value: number | null, digits: number): string {
   if (value === null || !Number.isFinite(value)) return '—'
@@ -496,10 +731,4 @@ function ago(seconds: number): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`
   if (seconds < 172_800) return `${Math.round(seconds / 3600)} h ago`
   return `${Math.round(seconds / 86_400)} d ago`
-}
-
-/** Held now over what the bonds would be worth staked. Above 150% the wallet bought more elsewhere; the exact number says little. */
-function kept(ratio: number | null): string {
-  if (ratio === null) return '—'
-  return ratio > 1.5 ? '>150%' : `${Math.round(ratio * 100)}%`
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanLabel, holderStats, labelClass, netMovers, overlap, segmentTotals, smartTape, type Holder, type Mover } from './flows.ts'
+import { cleanLabel, holderStats, labelClass, labelMap, netMovers, overlap, segmentTotals, smartTape, type Holder, type Mover, type NansenSnapshot } from './flows.ts'
 
 const mover = (address: string, label: string | null, boughtUsd: number, soldUsd: number): Mover => ({
   address,
@@ -26,6 +26,23 @@ describe('labels', () => {
     expect(labelClass('HL Perps Swing Trader')).toBe('hl-trader')
     expect(labelClass('👤 Mogfather')).toBe('public-figure')
     expect(labelClass('[0x1234ab]')).toBeNull()
+  })
+})
+
+describe('protocol labels', () => {
+  const sleeve = '0x498752D5fa0600CBd613074C151Abe15B3FeC7CB'
+
+  it('lets the NetNet registry name win over Nansen everywhere', () => {
+    const [row] = netMovers([mover(sleeve, '🤓 Smart Trader [0x498752]', 915_000, 0)], [])
+    expect(row.label).toBe('NetNet manager sleeve')
+    expect(segmentTotals([row]).map((total) => total.key)).toEqual(['protocol'])
+    const snapshot = { buyers: [mover(sleeve, '🤓 Smart Trader', 1, 0)], sellers: [mover('0xAA', 'Binance Deposit', 0, 1)] } as unknown as NansenSnapshot
+    const labels = labelMap(snapshot)
+    expect(labels.get(sleeve.toLowerCase())).toBe('NetNet manager sleeve')
+    expect(labels.get('0xaa')).toBe('Binance Deposit')
+    expect(labelMap(null).get('0xb078cc304a0b264c5f3680dc0488954accd02e87')).toBe('NET staking pool')
+    expect(labelClass('NET staking pool')).toBe('staking')
+    expect(labelClass('NetNet treasury')).toBe('protocol')
   })
 })
 
