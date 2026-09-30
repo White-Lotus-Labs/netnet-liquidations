@@ -9,7 +9,9 @@ import { BuyZonePanel } from './components/BuyZonePanel.tsx'
 import { FlowsPanel } from './components/FlowsPanel.tsx'
 import { Ladder } from './components/Ladder.tsx'
 import { LoopPanel } from './components/LoopPanel.tsx'
+import { MusicToggle } from './components/MusicToggle.tsx'
 import { OracleStrip } from './components/OracleStrip.tsx'
+import { Petals } from './components/Petals.tsx'
 import type { BondFeed } from './lib/bonds.ts'
 import { describeBuyZone } from './lib/buyZone.ts'
 import { labelMap, type NansenSnapshot } from './lib/flows.ts'
@@ -25,6 +27,7 @@ import {
   type ScenarioModel,
 } from './lib/model.ts'
 import { emptyBook, type QuoteBook } from './lib/quoteBook.ts'
+import { useBackdropParallax } from './lib/useBackdropParallax.ts'
 import { stressDesk } from './seed/stressDesk.ts'
 import type { Desk } from './types.ts'
 
@@ -37,6 +40,8 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [book, setBook] = useState<QuoteBook | null>(null)
   const modeRef = useRef<'seed' | 'live'>('seed')
+  const backdropRef = useRef<HTMLDivElement>(null)
+  useBackdropParallax(backdropRef)
   const credit = usePolled(readCredit, CONTEXT_POLL_MS, refreshKey)
   const pendle = usePolled(readPendle, CONTEXT_POLL_MS, refreshKey)
   const nansen = usePolled(readNansen, NANSEN_POLL_MS, refreshKey)
@@ -148,7 +153,7 @@ export default function App() {
 
   return (
     <div className="min-h-svh">
-      <div className="backdrop" aria-hidden="true">
+      <div className="backdrop" aria-hidden="true" ref={backdropRef}>
         <img
           src="/images/tea-shop-exterior.webp"
           srcSet="/images/tea-shop-exterior-780w.webp 780w, /images/tea-shop-exterior.webp 1280w"
@@ -158,6 +163,7 @@ export default function App() {
           decoding="async"
         />
       </div>
+      <Petals />
       <header className="topbar text-[#f6e6c8]">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 md:min-h-[84px] md:px-[clamp(22px,3vw,40px)]">
           <a className="flex items-center gap-2.5 text-chrome no-underline sm:gap-3.5" href={TEA_SHOP_URL}>
@@ -193,6 +199,7 @@ export default function App() {
             >
               Refresh
             </button>
+            <MusicToggle className={cx(CHROME_PILL, 'h-8 px-3')} />
             <a className={cx(CHROME_PILL, 'h-8 px-3')} href={TEA_SHOP_URL} target="_blank" rel="noreferrer">
               Enter the tea shop ↗
             </a>
