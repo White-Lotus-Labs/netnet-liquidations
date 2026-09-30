@@ -93,11 +93,6 @@ export function fillLabel(fill: RouteFill): string {
   return canonical ? `${name} · canonical pair` : name
 }
 
-export function fillsSummary(fills: RouteFill[]): string {
-  if (fills.length === 0) return 'route legs unavailable'
-  return fills.map((fill) => `${fillLabel(fill)} ${(fill.shareBps / 100).toFixed(1)}%`).join(', ')
-}
-
 export type SizeExecution = {
   netRaw: bigint
   usdgOutRaw: bigint

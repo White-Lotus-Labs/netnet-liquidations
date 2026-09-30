@@ -1,4 +1,4 @@
-import { NET_DECIMALS, USDG_DECIMALS, WAD, WSNET_DECIMALS } from './units.ts'
+import { NET_DECIMALS, USDG_DECIMALS, WAD } from './units.ts'
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ')
@@ -29,11 +29,6 @@ export function formatUsdg(raw: bigint | null, digits = 0): string {
   return formatUnits(raw, USDG_DECIMALS, digits)
 }
 
-export function formatWsNet(raw: bigint | null, digits = 2): string {
-  if (raw === null) return '—'
-  return formatUnits(raw, WSNET_DECIMALS, digits)
-}
-
 export function formatNet(raw: bigint | null, digits = 2): string {
   if (raw === null) return '—'
   return formatUnits(raw, NET_DECIMALS, digits)
@@ -59,8 +54,9 @@ export function formatPercentWad(wad: bigint | null, digits = 1): string {
 
 export function formatHealth(healthWad: bigint | null): string {
   if (healthWad === null) return '—'
-  const digits = healthWad < 10n * WAD ? 3 : 2
-  return formatUnits(healthWad, 18, digits)
+  // Dust borrows read like 31,205,565. Past 10 the exact number says nothing.
+  if (healthWad > 10n * WAD) return '>10'
+  return formatUnits(healthWad, 18, 3)
 }
 
 export function formatMultiple(value: number | null): string {
@@ -70,6 +66,7 @@ export function formatMultiple(value: number | null): string {
 
 export function formatApy(apy: number | null): string {
   if (apy === null || !Number.isFinite(apy)) return '—'
+  if (apy > 10) return '>1,000%'
   return `${(apy * 100).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
 }
 
@@ -95,6 +92,11 @@ export function formatWarsaw(ms: number): string {
     hourCycle: 'h23',
   }).format(new Date(ms))
   return `${formatted} Europe/Warsaw`
+}
+
+/** "18:02", Warsaw time. Pure, so it is safe in render (unlike an age from Date.now). */
+export function formatClock(ms: number): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms))
 }
 
 export function formatAge(seconds: number | null): string {

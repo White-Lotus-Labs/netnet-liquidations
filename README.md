@@ -1,6 +1,8 @@
-# Loopback buy zones
+# NET Desk
 
-A single-page desk for deciding **where to bid NET** when Morpho Loopback liquidations force wsNET collateral into NET/USDG liquidity. Router quotes are the impact curve. The canonical Uniswap v2 pair is the floor, not the whole book.
+A one-page NetNet desk from [Iroh's Tea Shop](https://iroh-tea-shop.up.railway.app). It reads NET on Robinhood Chain and answers six questions: can forced selling happen now, where does forced NET print, who goes first, who buys NetNet bonds, who trades NET on the DEX, and is the wsNET → USDG loop under stress.
+
+The buy zone shows **where to bid NET** when Morpho Loopback liquidations force wsNET collateral into NET/USDG liquidity. Router quotes are the impact curve. The canonical Uniswap v2 pair is the floor, not the whole book.
 
 It is a decision tool. It does not connect a wallet and it does not send transactions.
 
@@ -35,7 +37,9 @@ Copy `.env.example` to `.env` if you want a different RPC or poll interval. Defa
 | `VITE_POLL_SECONDS` | `45` | Refresh interval (15–300) |
 | `ZEROX_API_KEY` | unset | Optional 0x / Matcha key. Inlined into the bundle. See below. |
 | `NANSEN_API_KEY` | unset | Server-only. Feeds the holder and flow panel through `/api/nansen`. Never inlined. |
-| `NANSEN_TTL_MINUTES` | `60` | How long the server keeps one Nansen read (10–720). |
+| `NANSEN_TTL_MINUTES` | `60` | How long the server keeps one Nansen read (10–720). Bond buyer labels use the same interval. |
+| `BONDS_TTL_SECONDS` | `60` | Server-only. Minimum seconds between bond chain reads for `/api/bonds` (30–600). |
+| `BONDS_CACHE_FILE` | `.cache/bonds.json` | Server-only. Where the bond index is saved. Without a saved index, the first read takes about 20 minutes. |
 
 The first paint is the **18:02 Europe/Warsaw stress snapshot** in `seed/` (block 74,925,656): the 62.5% book, the mid-band oracle, the canonical pool, and the 30 weakest borrowers. The badge says **Snapshot** until a live poll replaces the whole book. Router quotes still load against the current aggregator while that snapshot is up. If the first poll fails, the snapshot stays and the banner says so. A later failed refresh keeps the last live book.
 
@@ -59,6 +63,8 @@ The 38.5% LLTV twin market is a footnote only. It is not in the ladder.
 6. **Credit** — who funds the book. NetNet Credit (nnUSDG, Morpho Vault V2 `0x9934…3B57`) lends USDG into Loopback and six stock markets. The panel shows vault assets, what can leave now, depositor APY, the two largest depositors, and the largest borrower weighted by vault money. The table lists each market’s allocation, cap, free USDG, utilization, borrow APY, and the borrow APY in 7 days if utilization holds. Charts show 14 days of Loopback borrow APY, utilization, and supplied USDG. Risks are computed each refresh.
 7. **Pendle** — the sNET index priced forward. Every wsNET’s credited value is multiplied by `sNET.index()`, so index growth is the looper’s income and the borrow rate is the cost. The panel converts Pendle’s implied and trailing APY to a daily rate, measures on-chain index drift from the seed snapshot, and projects when the adaptive curve pushes the Loopback borrow rate past the implied index growth. Past that point the loop has negative carry.
 8. **Holders and flows** — Nansen on NET: holder count, 7-day DEX buy and sell volume, smart-money and public-figure net flow, the staking pool’s share, net buyers and sellers by label, and the smart-money tape. Loopback borrowers and large credit-vault borrowers are tagged. Nansen labels also show under ladder addresses.
+
+9. **Bond buyers** — who buys NetNet bonds, epoch by epoch (8 hours each). The server reads every `BondCreated` log from the BondDepository and labels each buyer with Nansen. Pick 7d, 30d, or all time. The chart shows the sales of each epoch as a share of its cap (0.25% of NET supply), split by buyer group: smart money, public figures, Hyperliquid traders, other labelled, unlabelled, and not read yet. The tables show the share and average price of each group, and the top buyers with Loopback-borrower and DEX-seller tags. “Still holds” compares the NET, sNET, wsNET, and unvested bonds a wallet holds now with what its bonds would be worth if staked. A label does not prove who owns a wallet.
 
 The Morpho vault and Pendle reads refresh every 5 minutes in the browser. Nansen runs on the server, one read per `NANSEN_TTL_MINUTES`, and only when someone opens the page.
 
@@ -113,11 +119,13 @@ Sizes quoted each refresh: 1, 5, 15, 40, 80, 150, 300, and 600 NET, plus the sce
 | `src/lib/rates.ts` | Adaptive-curve projection and daily-rate conversions. |
 | `src/lib/flows.ts` | Nansen label classes, net movers, smart-money tape, holder split. |
 | `nansen.mjs` | Server-side Nansen reads with a TTL cache. Used by `server.mjs` and the Vite dev server. |
+| `bonds.mjs` | Server-side bond index behind `/api/bonds`: BondDepository logs, NET supply, sNET index, holdings, Nansen labels. |
+| `src/lib/bonds.ts` | Bond buyer groups, the per-epoch series, top buyers, the summary, and the plain-language lines. |
 | `src/lib/model.ts` | Ladder rows and scenario buckets. |
 | `src/seed/stressDesk.ts` | 18:02 Warsaw snapshot used for first paint. |
 | `seed/` | The stress note and JSON that snapshot was taken from. |
 | `src/mock/sampleDesk.ts` | Frozen illustration kept for tests. |
-| `server.mjs` | Production server. Reads `PORT`, serves `dist/`, SPA fallback, `/health`, `/api/nansen`. |
+| `server.mjs` | Production server. Reads `PORT`, serves `dist/`, SPA fallback, `/health`, `/api/nansen`, `/api/bonds`. |
 | `railway.toml` | Nixpacks build, start command, healthcheck. |
 | `nixpacks.toml` | Installs devDependencies so `vite` and `tsc` exist when `NODE_ENV=production`. |
 
@@ -135,6 +143,8 @@ The public defaults work with no secrets: Robinhood Chain RPC, Morpho GraphQL, a
 | `ZEROX_API_KEY` or `VITE_ZEROX_API_KEY` | no | Referrer-restricted 0x key. Inlined into the JS. Do not commit it. |
 | `NANSEN_API_KEY` | no | Runtime only. Without it the flow panel says the key is missing and the rest works. |
 | `NANSEN_TTL_MINUTES` | no | `60` if unset. Each read is 9 Nansen calls. |
+| `BONDS_TTL_SECONDS` | no | `60` if unset. Bond chain reads use the public RPC. |
+| `BONDS_CACHE_FILE` | no | Point it at a mounted volume. Without one, each deploy reads the bond history again (about 20 minutes). |
 | `PORT` | set by Railway | `server.mjs` binds `0.0.0.0:$PORT`. Do not hardcode it. |
 
 From the Railway dashboard, with this repo linked:

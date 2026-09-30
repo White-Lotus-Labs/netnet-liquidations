@@ -4,7 +4,7 @@ type Series = { values: number[]; className: string; label: string; dashed?: boo
 export function Sparkline({ series, height = 56, floor }: { series: Series[]; height?: number; floor?: number }) {
   const width = 300
   const all = series.flatMap((line) => line.values).filter(Number.isFinite)
-  if (all.length < 2) return <p className="text-xs text-faint">Not enough history to draw.</p>
+  if (all.length < 2) return <p className="text-xs text-muted">Not enough history to draw.</p>
   const min = floor ?? Math.min(...all)
   const max = Math.max(...all)
   const span = max - min || 1
@@ -18,7 +18,7 @@ export function Sparkline({ series, height = 56, floor }: { series: Series[]; he
       .filter(Boolean)
       .join(' ')
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="block h-14 w-full" role="img" aria-label={series.map((line) => line.label).join(', ')}>
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="block w-full" style={{ height }} role="img" aria-label={series.map((line) => line.label).join(', ')}>
       {series.map((line) => (
         <polyline
           key={line.label}

@@ -1,164 +1,150 @@
 import { useState } from 'react'
-import { cx, formatHealth, formatPercentWad, formatUsdg, formatWad, formatWsNet, shortAddress } from '../lib/format.ts'
-import type { Trigger } from '../lib/liquidation.ts'
-import { LABEL_TONE, labelClass } from '../lib/flows.ts'
+import { cx, formatHealth, formatNet, formatPercentWad, formatUsdg, formatWad } from '../lib/format.ts'
 import type { EnrichedPosition } from '../lib/model.ts'
 import { WAD } from '../lib/units.ts'
+import { Section, Who } from './ui.tsx'
+
+const NEAR = WAD / 5n // within 20% of the liquidation line
+const DUST = 1_000_000n // under 1 USDG of debt
+const SHORT_LIST = 15
 
 export function Ladder({
   rows,
   borrowerCount,
   labels,
+  vaultBorrowers,
 }: {
   rows: EnrichedPosition[]
   borrowerCount: number | null
   labels: Map<string, string>
+  vaultBorrowers: Set<string>
 }) {
-  const [copied, setCopied] = useState<string | null>(null)
+  const [all, setAll] = useState(false)
+  const [dust, setDust] = useState(false)
   const [query, setQuery] = useState('')
-  const filtered = query.trim()
-    ? rows.filter((row) => row.address.toLowerCase().includes(query.trim().toLowerCase()))
-    : rows
+  const real = rows.filter((row) => row.borrowRaw >= DUST)
+  const near = real.filter((row) => row.distanceWad !== null && row.distanceWad < NEAR)
+  const needle = query.trim().toLowerCase()
+  const shown = all
+    ? (dust ? rows : real).filter((row) => !needle || row.address.toLowerCase().includes(needle))
+    : near.slice(0, SHORT_LIST)
+  const nearDebt = near.reduce((sum, row) => sum + row.borrowRaw, 0n)
+  const nearNet = near.reduce((sum, row) => sum + (row.seizedNetRaw ?? 0n), 0n)
 
   return (
-    <section aria-label="Liquidation ladder" className="rounded-md border border-line bg-panel" data-testid="ladder">
-      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-line px-3 py-2.5">
-        <div>
-          <h2 className="text-[11px] uppercase tracking-[0.16em] text-faint">Liquidation ladder</h2>
-          <p className="mt-1 text-sm text-ink">
-            {rows.length.toLocaleString('en-US')} open borrows
-            {borrowerCount !== null && borrowerCount !== rows.length ? ` of ${borrowerCount.toLocaleString('en-US')} indexed` : ''}
-            , weakest health first
-          </p>
-        </div>
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Filter address"
-          aria-label="Filter ladder by address"
-          className="w-full rounded border border-line bg-desk px-2 py-1 text-sm text-ink outline-none placeholder:text-faint focus:border-amber sm:w-44"
-        />
+    <Section
+      id="ladder"
+      testId="ladder"
+      seal="梯"
+      eyebrow="Loopback borrowers · Morpho"
+      title="Next to"
+      accent="liquidate"
+      answer={
+        near.length === 0
+          ? 'No borrower sits within 20% of liquidation.'
+          : `${near.length} borrower${near.length === 1 ? '' : 's'} sit within 20% of liquidation. They owe ${formatUsdg(nearDebt, 0)} USDG and would send ${formatNet(nearNet, 2)} NET to market.`
+      }
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted">
+        <button
+          type="button"
+          className="min-h-8 cursor-pointer rounded-[3px] border border-[rgb(74_47_29/0.32)] bg-[rgb(255_252_243/0.6)] px-3 font-semibold tracking-[0.06em] text-ink hover:border-accent/60"
+          aria-expanded={all}
+          onClick={() => setAll((value) => !value)}
+        >
+          {all ? 'Show the nearest' : `Show all ${real.length.toLocaleString('en-US')}`}
+        </button>
+        {borrowerCount !== null && borrowerCount > rows.length ? <span>of {borrowerCount.toLocaleString('en-US')} indexed</span> : null}
+        {all ? (
+          <>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Filter address"
+              aria-label="Filter borrowers by address"
+              className="w-44 rounded border border-[rgb(74_47_29/0.3)] bg-field px-2 py-1 text-sm text-ink outline-none placeholder:text-muted"
+            />
+            {rows.length > real.length ? (
+              <label className="inline-flex items-center gap-1.5">
+                <input type="checkbox" checked={dust} onChange={(event) => setDust(event.target.checked)} className="accent-accent" />
+                Include dust ({rows.length - real.length})
+              </label>
+            ) : null}
+          </>
+        ) : null}
       </div>
-      <div className="max-h-[34rem] overflow-auto">
-        <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-          <thead className="sticky top-0 bg-panel-2 text-[11px] uppercase tracking-[0.12em] text-faint">
-            <tr>
-              <th className="px-3 py-2 font-medium">Address</th>
-              <th className="px-3 py-2 font-medium text-right">wsNET</th>
-              <th className="px-3 py-2 font-medium text-right">Debt USDG</th>
-              <th className="px-3 py-2 font-medium text-right">Health</th>
-              <th className="px-3 py-2 font-medium text-right">LTV</th>
-              <th className="px-3 py-2 font-medium text-right">Price to liq</th>
-              <th className="px-3 py-2 font-medium text-right">Distance</th>
+      <div className={cx('mt-3 overflow-x-auto', all && 'max-h-[34rem] overflow-y-auto')}>
+        <table className="w-full min-w-[620px] border-collapse text-left text-[13px]">
+          <thead className="sticky top-0 bg-paper text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+            <tr className="border-b border-line">
+              <th className="px-2.5 pb-1.5 font-semibold">Who</th>
+              <th className="px-2.5 pb-1.5 text-right font-semibold">Debt USDG</th>
+              <th className="px-2.5 pb-1.5 text-right font-semibold">NET to market</th>
+              <th className="px-2.5 pb-1.5 text-right font-semibold">Price to liq</th>
+              <th className="px-2.5 pb-1.5 text-right font-semibold">Health</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {shown.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-muted">
-                  {rows.length === 0 ? 'No open borrows returned.' : 'No address matches that filter.'}
+                <td colSpan={5} className="px-2.5 py-6 text-center text-muted">
+                  {all ? 'No address matches that filter.' : 'Show all to see the full book.'}
                 </td>
               </tr>
             ) : (
-              filtered.map((row) => (
-                <tr key={row.address} className="border-t border-line/80 hover:bg-panel-2">
-                  <td className="px-3 py-1.5">
-                    <button
-                      type="button"
-                      className="num text-cyan hover:underline"
-                      title={copied === row.address ? 'Copied' : row.address}
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(row.address).then(
-                          () => {
-                            setCopied(row.address)
-                            window.setTimeout(() => setCopied((current) => (current === row.address ? null : current)), 1200)
-                          },
-                          () => setCopied(null),
-                        )
-                      }}
-                    >
-                      {shortAddress(row.address)}
-                    </button>
-                    <Label text={labels.get(row.address.toLowerCase()) ?? null} />
-                  </td>
-                  <td className="num px-3 py-1.5 text-right">{formatWsNet(row.collateralRaw, 2)}</td>
-                  <td className="num px-3 py-1.5 text-right">{formatUsdg(row.borrowRaw, 0)}</td>
-                  <td className={cx('num px-3 py-1.5 text-right', healthClass(row.healthWad))}>
-                    {formatHealth(row.healthWad)}
-                    {row.healthSource === 'indexed' ? <span className="ml-1 text-[10px] text-faint">idx</span> : null}
-                  </td>
-                  <td className="num px-3 py-1.5 text-right">{formatPercentWad(row.ltvWad, 1)}</td>
-                  <td className="px-3 py-1.5 text-right">
-                    <span className="num block text-ink">{triggerPrimary(row.trigger)}</span>
-                    <span className="block text-[10px] text-faint">{triggerSecondary(row.trigger)}</span>
-                  </td>
-                  <td className={cx('num px-3 py-1.5 text-right', distanceClass(row.distanceWad))}>
-                    {formatPercentWad(row.distanceWad, 1)}
-                  </td>
-                </tr>
-              ))
+              shown.map((row) => {
+                const key = row.address.toLowerCase()
+                const liq = trigger(row)
+                return (
+                  <tr key={row.address} className="border-b border-line last:border-b-0 hover:bg-gold/10">
+                    <td className="px-2.5 py-1.5">
+                      <Who address={row.address} label={labels.get(key) ?? null} tags={vaultBorrowers.has(key) ? ['Credit-vault borrower'] : undefined} />
+                    </td>
+                    <td className="num px-2.5 py-1.5 text-right font-semibold">{formatUsdg(row.borrowRaw, 0)}</td>
+                    <td className="num px-2.5 py-1.5 text-right">{formatNet(row.seizedNetRaw, 2)}</td>
+                    <td className="px-2.5 py-1.5 text-right">
+                      <span className="num block text-ink">{liq.price}</span>
+                      <span className="num block text-[11px] text-muted">{liq.note}</span>
+                    </td>
+                    <td className={cx('num px-2.5 py-1.5 text-right', healthClass(row.healthWad))}>
+                      {formatHealth(row.healthWad)}
+                      {row.healthSource === 'indexed' ? (
+                        <span className="ml-1 text-[10px] text-muted" title="Morpho index health; the oracle price is missing">
+                          idx
+                        </span>
+                      ) : null}
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
       </div>
-    </section>
-  )
-}
-
-function Label({ text }: { text: string | null }) {
-  if (!text) return null
-  return (
-    <span className={cx('block max-w-[11rem] truncate text-[10px]', LABEL_TONE[labelClass(text) ?? 'other'])} title={`Nansen: ${text}`}>
-      {text}
-    </span>
+    </Section>
   )
 }
 
 function healthClass(health: bigint | null): string {
   if (health === null) return 'text-muted'
-  if (health < WAD) return 'text-rose'
-  if (health < 1_050_000_000_000_000_000n) return 'text-rose'
-  if (health < 1_100_000_000_000_000_000n) return 'text-amber'
-  if (health < 1_200_000_000_000_000_000n) return 'text-amber-dim'
-  return 'text-mint'
+  if (health < 1_050_000_000_000_000_000n) return 'text-seal'
+  if (health < 1_100_000_000_000_000_000n) return 'text-warn'
+  return 'text-ink'
 }
 
-function distanceClass(distance: bigint | null): string {
-  if (distance === null) return 'text-muted'
-  if (distance < 0n) return 'text-rose'
-  if (distance < 50_000_000_000_000_000n) return 'text-amber'
-  return 'text-muted'
-}
-
-function triggerPrimary(trigger: Trigger): string {
-  switch (trigger.kind) {
+function trigger(row: EnrichedPosition): { price: string; note: string } {
+  const drop = row.distanceWad === null ? '' : formatPercentWad(-row.distanceWad, 1)
+  switch (row.trigger.kind) {
     case 'twap':
-      return formatWad(trigger.twapWad, 2)
+      return { price: formatWad(row.trigger.twapWad, 2), note: `TWAP · ${drop}` }
     case 'nav':
-      return formatWad(trigger.navWad, 2)
+      return { price: formatWad(row.trigger.navWad, 2), note: `NAV · ${drop}` }
     case 'liquidatable':
-      return 'Now'
+      return { price: 'Now', note: 'past the line' }
     case 'unavailable':
-      return '—'
+      return { price: '—', note: 'no oracle mark' }
     default: {
-      const neverTrigger: never = trigger
-      return neverTrigger
-    }
-  }
-}
-
-function triggerSecondary(trigger: Trigger): string {
-  switch (trigger.kind) {
-    case 'twap':
-      return 'TWAP USDG/NET'
-    case 'nav':
-      return 'NAV · spot-immune'
-    case 'liquidatable':
-      return 'line already crossed'
-    case 'unavailable':
-      return 'oracle mark missing'
-    default: {
-      const neverTrigger: never = trigger
+      const neverTrigger: never = row.trigger
       return neverTrigger
     }
   }

@@ -28,7 +28,7 @@ export function ImpactChart(props: Props) {
   if (curve.length < 2 && props.agg.length < 2) {
     return (
       <div className="flex h-56 items-center justify-center rounded border border-dashed border-line text-sm text-muted" data-testid="impact-chart">
-        Pool reserves and router quotes unavailable — impact curve not drawn.
+        No pool reserves or router quotes to draw.
       </div>
     )
   }
@@ -91,14 +91,14 @@ export function ImpactChart(props: Props) {
         <title id={labelId}>Router average fill versus the canonical Uniswap v2 price after a NET sale</title>
         {yTicks.map((tick) => (
           <g key={tick}>
-            <line x1={VB.left} x2={VB.w - VB.right} y1={yOf(tick)} y2={yOf(tick)} stroke="#2a3344" strokeWidth="1" />
-            <text x={VB.left - 6} y={yOf(tick) + 3} textAnchor="end" fill="#667386" fontSize="10" fontFamily="IBM Plex Mono, monospace">
+            <line x1={VB.left} x2={VB.w - VB.right} y1={yOf(tick)} y2={yOf(tick)} className="stroke-line" strokeWidth="1" />
+            <text x={VB.left - 6} y={yOf(tick) + 3} textAnchor="end" className="fill-muted tabular-nums" fontSize="10">
               {tick.toFixed(0)}
             </text>
           </g>
         ))}
         {xTicks.map((tick) => (
-          <text key={tick} x={xOf(tick)} y={VB.h - 10} textAnchor="middle" fill="#667386" fontSize="10" fontFamily="IBM Plex Mono, monospace">
+          <text key={tick} x={xOf(tick)} y={VB.h - 18} textAnchor="middle" className="fill-muted tabular-nums" fontSize="10">
             {tick.toFixed(tick >= 100 ? 0 : 1)}
           </text>
         ))}
@@ -108,35 +108,39 @@ export function ImpactChart(props: Props) {
             width={plotW}
             y={Math.min(yOf(band.low), yOf(band.high))}
             height={Math.abs(yOf(band.low) - yOf(band.high))}
-            fill="#e6b35a"
-            opacity="0.14"
+            className="fill-gold"
+            opacity="0.16"
           />
         ) : null}
-        <Level y={props.navWad} color="#667386" dashed xOf={xOf} yOf={yOf} maxNet={maxNet} />
-        <Level y={props.pauseWad} color="#e07a86" dashed xOf={xOf} yOf={yOf} maxNet={maxNet} />
-        <Level y={props.twapWad} color="#e6b35a" xOf={xOf} yOf={yOf} maxNet={maxNet} />
-        <Level y={props.spotWad} color="#7fd1c7" xOf={xOf} yOf={yOf} maxNet={maxNet} />
-        {path ? <path d={path} fill="none" stroke="#93b4ea" strokeWidth="1.75" strokeDasharray="5 4" /> : null}
-        {aggPath ? <path d={aggPath} fill="none" stroke="#8fceab" strokeWidth="2.25" /> : null}
+        <Level y={props.navWad} className="stroke-muted" dashed xOf={xOf} yOf={yOf} maxNet={maxNet} />
+        <Level y={props.pauseWad} className="stroke-seal" dashed xOf={xOf} yOf={yOf} maxNet={maxNet} />
+        <Level y={props.twapWad} className="stroke-gold-ink" xOf={xOf} yOf={yOf} maxNet={maxNet} />
+        <Level y={props.spotWad} className="stroke-ink" xOf={xOf} yOf={yOf} maxNet={maxNet} />
+        {path ? <path d={path} fill="none" className="stroke-lotus" strokeWidth="1.75" strokeDasharray="5 4" /> : null}
+        {aggPath ? <path d={aggPath} fill="none" className="stroke-jade" strokeWidth="2.25" /> : null}
         {markerNet !== null && markerNet > 0 ? (
-          <line x1={xOf(markerNet)} x2={xOf(markerNet)} y1={VB.top} y2={VB.top + plotH} stroke="#e6b35a" strokeDasharray="3 3" />
+          <line x1={xOf(markerNet)} x2={xOf(markerNet)} y1={VB.top} y2={VB.top + plotH} className="stroke-gold-ink" strokeDasharray="3 3" />
         ) : null}
-        {hoverAgg ? <circle cx={xOf(hoverAgg.net)} cy={yOf(hoverAgg.price)} r="3.5" fill="#8fceab" /> : null}
-        {hoverCanon ? <circle cx={xOf(hoverCanon.net)} cy={yOf(hoverCanon.price)} r="3" fill="#93b4ea" /> : null}
-        <text x={VB.left} y={12} fill="#93a0b3" fontSize="10">
+        {hoverAgg ? <circle cx={xOf(hoverAgg.net)} cy={yOf(hoverAgg.price)} r="3.5" className="fill-jade" /> : null}
+        {hoverCanon ? <circle cx={xOf(hoverCanon.net)} cy={yOf(hoverCanon.price)} r="3" className="fill-lotus" /> : null}
+        <text x={VB.left} y={12} className="fill-muted" fontSize="10">
           USDG/NET
         </text>
-        <text x={VB.w - VB.right} y={VB.h - 10} textAnchor="end" fill="#93a0b3" fontSize="10">
+        <text x={VB.w - VB.right} y={VB.h - 2} textAnchor="end" className="fill-muted" fontSize="10">
           NET sold
         </text>
       </svg>
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-muted">
-        <Legend color="#8fceab" label={props.aggLabel} />
-        <Legend color="#93b4ea" label="Canonical Uniswap v2 only" />
-        <Legend color="#7fd1c7" label="Spot" />
-        <Legend color="#e6b35a" label="TWAP / buy zone" />
-        <Legend color="#e07a86" label="Pause (TWAP × 0.85)" />
-        <Legend color="#667386" label="NAV" />
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-muted">
+        <Legend className="bg-jade" label={props.aggLabel} />
+        <Legend className="bg-lotus" label="Canonical Uniswap v2 only" />
+        <Legend className="bg-ink" label="Spot" />
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-3 bg-gold/30" />
+          Buy zone
+        </span>
+        <Legend className="bg-gold-ink" label="TWAP" />
+        <Legend className="bg-seal" label="Pause (TWAP × 0.85)" />
+        <Legend className="bg-muted" label="NAV" />
         <span className="num text-ink">
           {hoverNet !== null
             ? `${hoverNet.toFixed(1)} NET · router ${hoverAgg ? hoverAgg.price.toFixed(2) : '—'} · pair ${hoverCanon ? hoverCanon.price.toFixed(2) : '—'}`
@@ -151,14 +155,14 @@ export function ImpactChart(props: Props) {
 
 function Level({
   y,
-  color,
+  className,
   dashed,
   yOf,
   xOf,
   maxNet,
 }: {
   y: bigint | null
-  color: string
+  className: string
   dashed?: boolean
   yOf: (price: number) => number
   xOf: (net: number) => number
@@ -172,7 +176,7 @@ function Level({
       x2={xOf(maxNet)}
       y1={py}
       y2={py}
-      stroke={color}
+      className={className}
       strokeWidth="1"
       strokeDasharray={dashed ? '4 4' : undefined}
       opacity="0.85"
@@ -208,10 +212,10 @@ function polyline(
     .join(' ')
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function Legend({ className, label }: { className: string; label: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="inline-block h-0.5 w-3" style={{ background: color }} />
+      <span className={`inline-block h-0.5 w-3 ${className}`} />
       {label}
     </span>
   )

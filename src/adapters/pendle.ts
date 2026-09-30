@@ -72,13 +72,6 @@ export async function readPendle(signal?: AbortSignal): Promise<PendleBook> {
   return { fetchedAt: now, active, markets, history }
 }
 
-/** PT discount to par implied by the market's own implied APY. */
-export function ptDiscount(impliedApy: number, expiry: number, now = Date.now()): number | null {
-  const years = (expiry - now) / (365 * 86_400_000)
-  if (!(years > 0) || !Number.isFinite(impliedApy)) return null
-  return 1 - Math.exp(-Math.log1p(impliedApy) * years)
-}
-
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal })
   if (!response.ok) throw new Error(`Pendle API HTTP ${response.status}`)
