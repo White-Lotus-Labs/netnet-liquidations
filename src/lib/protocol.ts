@@ -1,0 +1,66 @@
+// NetNet's own contract registry (app.netnet.capital bundle, human-verified in their app), lowercase address → label.
+// Generic infra (feeds, factories, stock tokens and pools, signers, relayers) is left out.
+export const PROTOCOL: Record<string, string> = {
+  '0x498752d5fa0600cbd613074c151abe15b3fec7cb': 'NetNet manager sleeve',
+  '0x3bb7a23316f82c0e984fa2e784846d8928a35f42': 'NetNet team multisig',
+  '0xe7e867518c5b3d929ca63622f314ff9dc60e96f6': 'NetNet Rialto owner',
+  '0x04822ea321a0dee6f40656172f29312104855d66': 'NetNet treasury',
+  '0xb078cc304a0b264c5f3680dc0488954accd02e87': 'NET staking pool',
+  '0x79e71f8a8a2912e40687a8820b2dc0fdd2f686b3': 'NetNet distributor',
+  '0x92166e94eea5b7799b761653881692f881dfc4c9': 'NetNet buyback (inverse bond)',
+  '0x346e1a31171a0f7ac73909010b5435768d3b5462': 'NetNet premium seller',
+  '0xff32a969a0c567129eecd926d04657728e1980c1': 'NetNet bond depository',
+  '0x575b7b7c97ef3e21c82daeb427899d583e1e913f': 'NetNet genesis bond',
+  '0x650f58079daa17ee28928c2f92d22291d038b2b0': 'NetNet pTEAM',
+  '0x732b3d1d3e8912cae75164fa14a6e1c4c64615b3': 'NetNet sleeve bond desk (v3)',
+  '0xa84efc3136bf1bb89ade9e5be6ab32cb1a04f08d': 'NetNet RWA bond desk (v2)',
+  '0x99b6ee6ede47d9a8a9bfd03f728a99b789df1961': 'NetNet RWA bond desk (v1)',
+  '0x2f2f215b810fa692304cb0095804ab3c8e4cef78': 'NetNet asset bond desk',
+  '0x70eaeec20c39df48509f1f3fab01f7dde207947b': 'NetNet OTC desk',
+  '0x086c58400b8708ef993f256e12e752dcf0ac918e': 'NetNet tax collector',
+  '0x8d8a68884134b49ec8549f6f5d7b43b8ca327814': 'NetNet fee router',
+  '0x82d04c79424fa36bd252aa0d031de512f5f7aefa': 'NetNet fee sink',
+  '0x929631b33f4070d6f54477fba3fd27566567daca': 'NetNet pair oracle',
+  '0xaff662814aa7cc80ac1577e03e123358cacc6a97': 'NetNet credit router',
+  '0x99347d5f70d3838763f6bddcf80304c8aa953b57': 'NetNet USDG vault',
+  '0xa1ee052ec32532304a7522bd9a4b594ec28ff1b1': 'NetNet zap',
+  '0x455ca67558414929d33db4e949058165f1338c0d': 'NetNet LP zap',
+  '0x3b4c1617c76c72d41ff43b625bc5dbbf3a32d986': 'NetNet asset bond zap',
+  '0xca9c78dd337a67f6e0077f65f5e9218719d30edf': 'NET token',
+  '0xb773ec2c326b7f98a5a83fc098825492f020a4c7': 'sNET token',
+  '0x63c12667638f2ae6fc6ae09b43d98ec84a8586ea': 'wsNET token',
+  '0x5fc5360d0400a0fd4f2af552add042d716f1d168': 'USDG token',
+  '0x59f95461e68e0c77605299791e1449f175165b54': 'NET/USDG pool',
+  '0x9d53d5e3bd5e8d4cbfa6db1ca238aea02e651010': 'Morpho Blue',
+  '0x89e5db8b5aa49aa85ac63f691524311aeb649eba': 'Uniswap v2 router',
+  '0x8366a39cc670b4001a1121b8f6a443a643e40951': 'Uniswap v4 pool manager',
+  '0xde9df88aba59b644d4d7f6305e52ab982a3cfcac': 'NetNet advance desk',
+  '0x04e2f5707a4421c7afc7b56c14bc190550ac594d': 'NetNet advance zap',
+  '0xe109eaf5fa12f93168947f62cc340c96f4dc15eb': 'NetNet boardroom desk',
+  '0x3174de69a84c53f82f6b6dca5c64e705cffe8dd6': 'NetNet sports book desk',
+  '0xc866e4f53f1439d85171a06395ce37b887d16fa1': 'NetNet sports book zap',
+  '0x21089cfcdbf47902a2f3950200ce9ea66bf79ee4': 'NetNet climb desk',
+  '0xf125ad8abde2591609a982e0b6a51309fdf7db37': 'NetNet climb jackpot pool',
+  '0xa99d15dace9aede816600a31c3e4158926000f3c': 'NetNet coinflip desk',
+  '0xf56e517652bb18e519871abb13a382d205f6e375': 'NetNet flight sim desk',
+  '0x75edfe49d9ec8c23a9931c5ef32ec56b2444a141': 'NetNet SpaceX Invaders desk',
+  '0x712f52fd42d7b89fd444e0cc4430020faa9cfb26': 'NetNet blackjack desk',
+  '0xfd46af62cf6e9306008a13bee045c542ec3daef6': 'NetNet button desk',
+  '0x757122439420900ca44a80c390d586011fd72c8a': 'NetNet turbo desk',
+  '0x212dbb2af8f150c6d66bc78910775fa8f52d5785': 'NetNet dial-up desk',
+  '0x9353766a5ffea84d15ba431928596f613f533a89': 'NetNet dial-up zap',
+  '0x7ef9528408d99f98056922291048f0710001e015': 'NetNet predict desk',
+  '0xb488368902b1cbd7533f1536c3f860065398d3e9': 'NetNet predict vault',
+  '0x7cf28d61d42352eb2fd68167e9b08f73cbbf21eb': 'NetNet pack desk',
+  '0x7332b329860986e596b2fd71e9c53786c0242ce5': 'NetNet prize vault',
+  '0x3a7dce19447f9028c360592fdfdb3f27c50dae29': 'NetNet perp vault',
+  '0xf6ec124ca62c841384abd0e128552cf9eb446205': 'NetNet perp clearinghouse',
+}
+
+const NAMES = new Set(Object.values(PROTOCOL))
+
+/** NetNet's own name for an address, or null. */
+export const protocolLabel = (address: string | null | undefined): string | null => (address ? (PROTOCOL[address.toLowerCase()] ?? null) : null)
+
+/** True for a label that came from the registry above. */
+export const isProtocolName = (label: string): boolean => NAMES.has(label)

@@ -1,3 +1,5 @@
+import { PROTOCOL, isProtocolName, protocolLabel } from './protocol.ts'
+
 /** Shapes served by nansen.mjs at /api/nansen. */
 export type Holder = {
   address: string | null
@@ -73,6 +75,7 @@ export function labelClass(label: string | null | undefined): LabelClass | null 
   const text = cleanLabel(label)
   if (!text) return null
   if (/NET Staking Pool/i.test(text)) return 'staking'
+  if (isProtocolName(text)) return 'protocol'
   if (/Former Smart/i.test(text)) return 'former-smart'
   // 🤓 is Nansen's smart-money mark. "Funded @x On Friendtech" is not a fund.
   if (/🤓|Smart Trader|Smart HL|\bFund\b/.test(text)) return 'smart'
@@ -103,7 +106,7 @@ export function netMovers(buyers: Mover[], sellers: Mover[]): NetMover[] {
   for (const row of [...buyers, ...sellers]) {
     if (!row.address) continue
     const key = row.address.toLowerCase()
-    const current = byAddress.get(key) ?? { address: row.address, label: cleanLabel(row.label), boughtUsd: 0, soldUsd: 0, netUsd: 0 }
+    const current = byAddress.get(key) ?? { address: row.address, label: protocolLabel(key) ?? cleanLabel(row.label), boughtUsd: 0, soldUsd: 0, netUsd: 0 }
     current.boughtUsd = Math.max(current.boughtUsd, row.boughtUsd)
     current.soldUsd = Math.max(current.soldUsd, row.soldUsd)
     current.netUsd = current.boughtUsd - current.soldUsd
@@ -204,18 +207,18 @@ export function holderStats(holders: Holder[], totalSupply: number | null): Hold
   }
 }
 
-/** Every non-empty label Nansen returned, keyed by lowercase address. */
+/** Every non-empty label Nansen returned, keyed by lowercase address. NetNet's own registry names win. */
 export function labelMap(snapshot: NansenSnapshot | null): Map<string, string> {
   const map = new Map<string, string>()
-  if (!snapshot) return map
   const add = (address: string | null, label: string | null) => {
     const text = cleanLabel(label)
     if (address && text) map.set(address.toLowerCase(), text)
   }
-  for (const list of [snapshot.holders, snapshot.wsHolders, snapshot.smartHolders, snapshot.buyers, snapshot.sellers]) {
+  for (const list of [snapshot?.holders, snapshot?.wsHolders, snapshot?.smartHolders, snapshot?.buyers, snapshot?.sellers]) {
     for (const row of list ?? []) add(row.address, row.label)
   }
-  for (const row of snapshot.smartTrades ?? []) add(row.address, row.label)
+  for (const row of snapshot?.smartTrades ?? []) add(row.address, row.label)
+  for (const [address, label] of Object.entries(PROTOCOL)) map.set(address, label)
   return map
 }
 

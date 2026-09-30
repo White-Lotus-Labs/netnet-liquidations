@@ -56,10 +56,36 @@ html {
 body {
   margin: 0;
   min-height: 100svh;
-  background: linear-gradient(180deg, #24170d, var(--color-lacquer) 320px) no-repeat, var(--color-lacquer);
+  background: #140e0a;
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-weight: 500;
+}
+
+/* The tea shop at dusk, as in its waiting room. Fixed, so the sheet scrolls over it. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 42%;
+}
+
+/* Night settles at the edges, the doorway stays lit, and a light wash keeps the sheet the brightest thing. */
+.backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgb(14 10 12 / 0.62) 0%, rgb(14 10 12 / 0) 22%, rgb(14 10 12 / 0) 62%, rgb(14 10 8 / 0.82) 100%),
+    radial-gradient(120% 90% at 50% 48%, transparent 46%, rgb(10 7 6 / 0.55) 100%),
+    rgb(14 10 8 / 0.25);
 }
 
 .num {
