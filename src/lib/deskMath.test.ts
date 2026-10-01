@@ -88,8 +88,8 @@ describe('buy zone copy', () => {
     expect(copy.headline).toContain('USDG/NET')
     expect(copy.headline).toContain('canonical pool')
     expect(copy.alert).toMatch(/canonical Uniswap v2/)
-    expect(copy.caveats.some((line) => line.includes('15%'))).toBe(true)
-    expect(copy.caveats.some((line) => line.includes('0.30%'))).toBe(true)
+    expect(copy.caveats.some((line) => line.text.includes('15%'))).toBe(true)
+    expect(copy.caveats.some((line) => line.text.includes('0.30%'))).toBe(true)
   })
 
   it('does not invent a spot print for an empty bucket', () => {

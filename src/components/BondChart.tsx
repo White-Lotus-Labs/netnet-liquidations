@@ -1,14 +1,21 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import type { EpochRow } from '../lib/bonds.ts'
+import { cx } from '../lib/format.ts'
+import type { GlossaryId } from '../lib/glossary.ts'
+import { Hint } from './ui.tsx'
 
-/** One stacked layer: a buyer group or a bond source. `paint` is a CSS color, or 'hatch'. */
-export type Layer = { key: string; name: string; paint: string; value: (row: EpochRow) => number }
+/** One stacked layer: a buyer group or a bond source. `paint` is a CSS color, or 'hatch'; `term` explains it in the legend. */
+export type Layer = { key: string; name: string; term?: GlossaryId; paint: string; value: (row: EpochRow) => number }
 /** A vertical rule at the left edge of an epoch. 'seal' is the v3 launch; 'muted' marks a desk's first bond. `short` is for narrow plots. */
 export type Marker = { epoch: number; label: string; short?: string; tone: 'seal' | 'muted' }
 
 const MIN_STEP = 2 // px per epoch; a narrower plot scrolls inside its box
 const AXIS_L = 38
 const AXIS_R = 46
+// Phone widths: narrower axis gutters leave more room for the columns.
+const NARROW_BOX = 440
+const AXIS_L_NARROW = 32
+const AXIS_R_NARROW = 30
 const BOTTOM = 22
 const TIP_W = 240
 const CANDLE = 4 * 3600 // feed.price holds 4 h candles, keyed by their open
@@ -38,7 +45,9 @@ export function BondChart(props: {
   const n = rows.length
   const last = n - 1
   const scroller = useRef<HTMLDivElement>(null)
+  const box = useRef<HTMLDivElement>(null)
   const [avail, setAvail] = useState(0)
+  const [boxW, setBoxW] = useState(0)
   const [scroll, setScroll] = useState(0)
   const [hover, setHover] = useState<number | null>(null)
   const [cursor, setCursor] = useState(last)
@@ -48,12 +57,21 @@ export function BondChart(props: {
   useLayoutEffect(() => {
     const node = scroller.current
     if (!node) return
-    const measure = () => setAvail(node.clientWidth)
+    const outer = box.current
+    const measure = () => {
+      setAvail(node.clientWidth)
+      if (outer) setBoxW(outer.clientWidth)
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(node)
+    if (outer) observer.observe(outer)
     return () => observer.disconnect()
   }, [])
+  // From the whole box, not the plot: the plot width depends on the gutters.
+  const narrow = boxW > 0 && boxW < NARROW_BOX
+  const axisL = narrow ? AXIS_L_NARROW : AXIS_L
+  const axisR = narrow ? AXIS_R_NARROW : AXIS_R
 
   const plotW = Math.max(avail, n * MIN_STEP)
   const step = n > 0 ? plotW / n : 0
@@ -148,17 +166,18 @@ export function BondChart(props: {
   }
 
   if (n === 0) return null
-  const outer = AXIS_L + avail + (line ? AXIS_R : 0)
-  const center = active === null ? 0 : AXIS_L + x(active) + width(active) / 2 - scroll
-  const tipLeft = center < outer / 2 ? Math.min(center + 14, outer - TIP_W) : Math.max(0, center - 14 - TIP_W)
+  const outer = axisL + avail + (line ? axisR : 0)
+  const center = active === null ? 0 : axisL + x(active) + width(active) / 2 - scroll
+  const tipW = Math.min(TIP_W, outer)
+  const tipLeft = Math.max(0, center < outer / 2 ? Math.min(center + 14, outer - tipW) : center - 14 - tipW)
 
   return (
     <div className="relative mt-3">
-      <div className="flex">
-        <div aria-hidden="true" className="relative flex-none" style={{ width: AXIS_L, height }}>
+      <div ref={box} className="flex">
+        <div aria-hidden="true" className="relative flex-none" style={{ width: axisL, height }}>
           <span className={`${AXIS_TITLE} left-0`}>NET</span>
           {netTicks.map((tick) => (
-            <span key={tick} className={`${AXIS_TEXT} right-2 -translate-y-1/2`} style={{ top: yNet(tick) }}>
+            <span key={tick} className={cx(AXIS_TEXT, narrow ? 'right-1.5' : 'right-2', '-translate-y-1/2')} style={{ top: yNet(tick) }}>
               {tick.toLocaleString('en-US')}
             </span>
           ))}
@@ -272,10 +291,10 @@ export function BondChart(props: {
           </div>
         </div>
         {line ? (
-          <div aria-hidden="true" className="relative flex-none" style={{ width: AXIS_R, height }}>
+          <div aria-hidden="true" className="relative flex-none" style={{ width: axisR, height }}>
             <span className={`${AXIS_TITLE} right-0`}>USDG</span>
             {line.scale.map((tick) => (
-              <span key={tick} className={`${AXIS_TEXT} left-2 -translate-y-1/2`} style={{ top: yPrice(tick) }}>
+              <span key={tick} className={cx(AXIS_TEXT, narrow ? 'left-1.5' : 'left-2', '-translate-y-1/2')} style={{ top: yPrice(tick) }}>
                 {tick.toLocaleString('en-US')}
               </span>
             ))}
@@ -283,15 +302,15 @@ export function BondChart(props: {
         ) : null}
       </div>
       {line ? (
-        <p aria-hidden="true" className="mt-1.5 flex flex-wrap justify-end gap-x-3 gap-y-1 text-[11px] text-muted">
+        <p className="mt-1.5 flex flex-wrap justify-end gap-x-3 gap-y-1 text-[11px] text-muted">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-[1.5px] w-4 bg-ink" />
+            <span aria-hidden="true" className="h-[1.5px] w-4 bg-ink" />
             NET price, 4 h close
           </span>
           {line.fills.length > 0 ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-[7px] rounded-full border border-ink bg-paper" />
-              Bond fill price
+              <span aria-hidden="true" className="size-[7px] rounded-full border border-ink bg-paper" />
+              <Hint id="fillPrice">Bond fill price</Hint>
             </span>
           ) : null}
         </p>
@@ -299,7 +318,7 @@ export function BondChart(props: {
       {active === null ? null : (
         <div
           aria-hidden="true"
-          style={{ left: tipLeft, top: top - 4, width: Math.min(TIP_W, outer) }}
+          style={{ left: tipLeft, top: top - 4, width: tipW }}
           className="num pointer-events-none absolute z-10 rounded bg-ink px-2.5 py-2 text-[10.5px] leading-[1.45] font-semibold text-paper shadow-[0_6px_18px_-6px_rgb(23_12_8/0.55)]"
         >
           {props.tip(rows[active], active === last)}

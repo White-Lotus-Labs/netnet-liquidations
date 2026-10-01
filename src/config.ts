@@ -46,7 +46,8 @@ export const LINKS = {
     'https://robinhoodchain.blockscout.com/address/0xff32a969A0c567129eECD926D04657728E1980C1',
 } as const
 
-export const RPC_URL = envString('VITE_RPC_URL', 'https://rpc.mainnet.chain.robinhood.com')
+// Same-origin proxy to the official RPC (rpc.mjs). VITE_RPC_URL sends the reads straight to another node.
+export const RPC_URL = envString('VITE_RPC_URL', '/api/rpc')
 export const MORPHO_GRAPHQL = envString('VITE_MORPHO_GRAPHQL', 'https://api.morpho.org/graphql')
 
 /** Public KyberSwap aggregator on Robinhood Chain. No key. */

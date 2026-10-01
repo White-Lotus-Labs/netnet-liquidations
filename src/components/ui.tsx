@@ -1,13 +1,168 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { cleanLabel, labelClass } from '../lib/flows.ts'
 import { cx } from '../lib/format.ts'
+import { GLOSSARY, type GlossaryId } from '../lib/glossary.ts'
 import { protocolLabel } from '../lib/protocol.ts'
+
+/** One glossary entry, or several shown in one slip. */
+export type HintId = GlossaryId | GlossaryId[]
+
+// One slip open at a time across the page.
+let openHint: { close: () => void } | null = null
+const GAP = 6 // px between trigger and slip
+const EDGE = 8 // px kept clear of the viewport edge
+
+const TRIGGER_TEXT =
+  'cursor-help [text-align:inherit] [text-transform:inherit] underline decoration-current/40 decoration-dotted decoration-1 underline-offset-[3px] hover:decoration-current aria-expanded:decoration-current'
+// 14px circle; the ::after pad makes a 24px hit area without moving anything.
+const TRIGGER_DOT =
+  "relative ml-1 inline-grid size-3.5 flex-none -translate-y-px cursor-help place-items-center rounded-full border border-current/45 align-middle font-sans text-[9px] font-bold leading-none tracking-normal normal-case text-muted transition-colors duration-[160ms] hover:text-accent aria-expanded:border-accent aria-expanded:text-accent after:absolute after:-inset-[5px] after:content-['']"
+const SLIP =
+  'fixed top-0 left-0 z-50 block w-max max-w-[min(280px,100vw_-_16px)] cursor-auto rounded-[4px] border border-l-[3px] border-line border-l-gold bg-[linear-gradient(180deg,#fffaf0,var(--color-paper))] px-3 py-2 text-left font-sans text-[12.5px] leading-[1.45] font-medium tracking-normal whitespace-normal text-ink normal-case shadow-[0_12px_28px_-10px_rgb(23_12_8/0.5),0_2px_6px_-2px_rgb(23_12_8/0.2)] outline-none motion-safe:animate-[slip-in_140ms_var(--ease-out)]'
+
+/**
+ * Glossary slip. With children, the label is the trigger (dotted underline); without, a small "?" follows the label.
+ * Mouse hover or focus opens it, a click or tap pins it, and Escape, a press outside or leaving focus closes it.
+ * The slip follows the trigger in the DOM, so Tab reaches its doc link; fixed position keeps scroll boxes from clipping it.
+ * No id: renders the children as they are.
+ */
+export function Hint({ id, children }: { id?: HintId; children?: ReactNode }) {
+  const slipId = useId()
+  const [open, setOpen] = useState(false)
+  const pinned = useRef(false)
+  const refocus = useRef(false)
+  const timer = useRef(0)
+  const wrap = useRef<HTMLSpanElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const slip = useRef<HTMLSpanElement>(null)
+  const [self] = useState(() => ({
+    close: () => {
+      pinned.current = false
+      setOpen(false)
+    },
+  }))
+  const show = () => {
+    window.clearTimeout(timer.current)
+    if (openHint !== self) openHint?.close()
+    openHint = self
+    setOpen(true)
+  }
+  const hide = () => {
+    window.clearTimeout(timer.current)
+    self.close()
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return
+    openHint = self
+    const place = () => {
+      const anchor = button.current?.getBoundingClientRect()
+      const card = slip.current
+      if (!anchor || !card) return
+      const width = card.offsetWidth
+      const height = card.offsetHeight
+      const viewW = document.documentElement.clientWidth
+      const viewH = window.innerHeight
+      const above = anchor.top - GAP - height
+      const below = anchor.bottom + GAP
+      // Above when it fits; else below when that fits; else the roomier side.
+      const top = above >= EDGE || (below + height > viewH - EDGE && anchor.top > viewH - anchor.bottom) ? above : below
+      const left = Math.min(anchor.left + anchor.width / 2 - width / 2, viewW - EDGE - width)
+      card.style.left = `${Math.max(EDGE, left)}px`
+      card.style.top = `${Math.max(EDGE, Math.min(top, viewH - EDGE - height))}px`
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (slip.current?.contains(document.activeElement)) {
+        refocus.current = true
+        button.current?.focus()
+      }
+      self.close()
+    }
+    const onPress = (event: PointerEvent) => {
+      if (!wrap.current?.contains(event.target as Node)) self.close()
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onPress, true)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onPress, true)
+      if (openHint === self) openHint = null
+    }
+  }, [open, self])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  if (!id) return children ?? null
+  const entries = (Array.isArray(id) ? id : [id]).map((key) => GLOSSARY[key])
+  const linked = new Set<string>()
+  return (
+    <span
+      ref={wrap}
+      onPointerEnter={(event) => {
+        if (event.pointerType !== 'mouse') return
+        window.clearTimeout(timer.current)
+        // A short delay so a pointer passing over does not flash slips; none when one is already open.
+        if (!open) timer.current = window.setTimeout(show, openHint ? 0 : 200)
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType !== 'mouse' || pinned.current) return
+        window.clearTimeout(timer.current)
+        timer.current = window.setTimeout(hide, 150)
+      }}
+      onBlur={(event) => {
+        if (!wrap.current?.contains(event.relatedTarget as Node | null)) hide()
+      }}
+    >
+      <button
+        ref={button}
+        type="button"
+        aria-expanded={open}
+        aria-describedby={slipId}
+        aria-label={children ? undefined : `About ${entries[0].term}`}
+        className={children ? TRIGGER_TEXT : TRIGGER_DOT}
+        onFocus={() => {
+          if (refocus.current) refocus.current = false
+          else show()
+        }}
+        onClick={() => {
+          if (open && pinned.current) return hide()
+          show()
+          pinned.current = true
+        }}
+      >
+        {children ?? '?'}
+      </button>
+      <span ref={slip} id={slipId} role={entries.some((entry) => entry.doc) ? undefined : 'tooltip'} tabIndex={-1} hidden={!open} className={SLIP}>
+        {entries.map((entry) => {
+          const doc = entry.doc && !linked.has(entry.doc.href) ? entry.doc : null
+          if (doc) linked.add(doc.href)
+          return (
+            <span key={entry.term} className="block [&+&]:mt-2">
+              <span className="block font-display text-base leading-tight font-semibold text-brocade">{entry.term}</span>
+              <span className="mt-0.5 block">{entry.text}</span>
+              {doc ? (
+                <a className="mt-1 inline-block font-semibold text-accent underline underline-offset-2 hover:text-seal" href={doc.href} target="_blank" rel="noreferrer">
+                  {doc.label}
+                </a>
+              ) : null}
+            </span>
+          )
+        })}
+      </span>
+    </span>
+  )
+}
 
 /** Evidence card: seal, eyebrow, serif title with an italic accent, then one lead answer and the detail. */
 export function Section(props: {
   id: string
   seal: string
-  eyebrow: string
+  eyebrow: ReactNode
   title: string
   accent?: string
   fresh?: ReactNode
@@ -47,7 +202,7 @@ export function Section(props: {
 const KPI_TONE = { up: 'text-up', down: 'text-seal', flat: 'text-muted', warn: 'text-warn' } as const
 
 /** One stat. Use inside KpiRow (a <dl>). `lead` marks the one answer tile of a section. */
-export function Kpi(props: { label: string; value: ReactNode; hint?: ReactNode; tone?: keyof typeof KPI_TONE; lead?: boolean }) {
+export function Kpi(props: { label: string; term?: HintId; value: ReactNode; hint?: ReactNode; tone?: keyof typeof KPI_TONE; lead?: boolean }) {
   return (
     <div
       className={cx(
@@ -56,7 +211,9 @@ export function Kpi(props: { label: string; value: ReactNode; hint?: ReactNode; 
           'rounded-md border border-line border-t-2 border-t-gold bg-[linear-gradient(180deg,rgb(255_251_240/0.72),rgb(226_207_166/0.3))] px-3.5 py-3 shadow-[inset_0_1px_rgb(255_255_255/0.55)]',
       )}
     >
-      <dt className="text-[10px] font-semibold uppercase leading-[1.2] tracking-[0.12em] text-muted">{props.label}</dt>
+      <dt className="text-[10px] font-semibold uppercase leading-[1.2] tracking-[0.12em] text-muted">
+        <Hint id={props.term}>{props.label}</Hint>
+      </dt>
       <dd
         className={cx(
           'num mt-1 font-[650] leading-[1.15]',
@@ -131,12 +288,13 @@ export function Seal(props: { glyph: string; size?: number }) {
   )
 }
 
-/** Pill group of toggle buttons (Shelf tabs). */
+/** Pill group of toggle buttons (Shelf tabs). `hint` puts a "?" inside the group, so it wraps with the last pill. */
 export function Segmented<T extends string>(props: {
   label: string
   options: ReadonlyArray<{ value: T; label: string }>
   value: T
   onChange: (value: T) => void
+  hint?: HintId
 }) {
   return (
     <div role="group" aria-label={props.label} className="inline-flex min-h-[38px] flex-wrap gap-1 rounded-[19px] text-[11.5px] font-[650] tracking-[0.02em] border border-line bg-[rgb(255_250_238/0.55)] p-[3px]">
@@ -151,6 +309,11 @@ export function Segmented<T extends string>(props: {
           {option.label}
         </button>
       ))}
+      {props.hint ? (
+        <span className="flex items-center pr-2">
+          <Hint id={props.hint} />
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -199,11 +362,21 @@ const LABEL_TONE: Record<string, string> = {
   'hl-trader': 'border-gold-ink/40 text-gold-ink',
 }
 
+const TAG_TERM: Record<string, GlossaryId> = {
+  'Credit-vault borrower': 'creditVaultBorrower',
+  'Loopback borrower': 'loopbackBorrower',
+  'Top 10': 'tagTop10',
+  'First bond in window': 'tagFirstBond',
+}
+// "Sold on DEX 7d" and the other windows share one entry.
+const tagTerm = (tag: string): GlossaryId | undefined => (tag.startsWith('Sold on DEX') ? 'tagSoldOnDex' : TAG_TERM[tag])
+
 const ICON_ACTION =
   'inline-grid size-[26px] flex-none cursor-pointer place-items-center rounded-[5px] border border-transparent text-muted transition-colors duration-[160ms] ease-lift hover:border-line hover:bg-[rgb(255_250_238/0.7)] hover:text-brocade'
 
 /** Wallet cell: short address, label (NetNet's registry name wins over Nansen's), tags, copy, and a Nansen profiler link. */
-export function Who(props: { address: string; label?: string | null; tags?: string[] }) {
+/** `stacked` keeps one row height in long tables: name and actions on one line, tags on a second line that never wraps. */
+export function Who(props: { address: string; label?: string | null; tags?: string[]; stacked?: boolean }) {
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
   const protocol = protocolLabel(props.address)
   const name = protocol ?? cleanLabel(props.label)
@@ -219,26 +392,27 @@ export function Who(props: { address: string; label?: string | null; tags?: stri
       () => flash('failed'),
     )
   }
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="font-mono text-xs text-muted" title={props.address}>
+  const tags = props.tags?.map((tag) => (
+    <Chip key={tag} tone={tag.startsWith('Sold') ? 'sell' : 'neutral'}>
+      <Hint id={tagTerm(tag)}>{tag}</Hint>
+    </Chip>
+  ))
+  const main = (
+    <div className={cx('flex min-w-0 items-center gap-x-2 gap-y-1', props.stacked ? 'flex-nowrap' : 'flex-wrap')}>
+      <span className="flex-none font-mono text-xs text-muted" title={props.address}>
         {props.address.slice(0, 6)}…{props.address.slice(-4)}
       </span>
       {name ? (
-        <span title={name} className={cx('max-w-[16rem] truncate rounded-full border bg-[rgb(255_250_238/0.7)] px-2 py-px text-[11.5px] font-semibold', tone)}>
+        <span title={name} className={cx(props.stacked ? 'min-w-0 max-w-[13rem]' : 'max-w-[16rem]', 'truncate rounded-full border bg-[rgb(255_250_238/0.7)] px-2 py-px text-[11.5px] font-semibold', tone)}>
           {name}
         </span>
       ) : null}
       {protocol ? (
-        <Chip tone="labelled" title="Address from NetNet's own contract registry">
-          Protocol
+        <Chip tone="labelled">
+          <Hint id="protocolTag">Protocol</Hint>
         </Chip>
       ) : null}
-      {props.tags?.map((tag) => (
-        <Chip key={tag} tone={tag.startsWith('Sold') ? 'sell' : 'neutral'}>
-          {tag}
-        </Chip>
-      ))}
+      {props.stacked ? null : tags}
       <span className="relative inline-flex">
         <button type="button" className={ICON_ACTION} aria-label="Copy address" title="Copy address" onClick={onCopy}>
           <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.3]">
@@ -268,6 +442,17 @@ export function Who(props: { address: string; label?: string | null; tags?: stri
           <path d="M9 2.5h4.5V7M13.5 2.5 7 9M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" />
         </svg>
       </a>
+    </div>
+  )
+  if (!props.stacked) return main
+  // The tag line is always there, so rows without tags keep the same height.
+  // Wide enough for three tags; the table scrolls inside its own box.
+  return (
+    <div className="min-w-[24rem]">
+      {main}
+      <div className="mt-0.5 flex h-[18px] min-w-0 flex-nowrap items-center gap-x-1.5 overflow-hidden">
+        {tags}
+      </div>
     </div>
   )
 }

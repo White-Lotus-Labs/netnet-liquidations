@@ -1,9 +1,19 @@
 import { useMemo } from 'react'
 import { CLASS_LABEL, holderStats, netMovers, overlap, segmentTotals, smartTape, type NansenSnapshot } from '../lib/flows.ts'
 import { cx, formatClock, formatCount, formatRatio, formatSignedUsd, formatUsd } from '../lib/format.ts'
-import { Details, Fresh, Kpi, KpiRow, Section, Who } from './ui.tsx'
+import type { GlossaryId } from '../lib/glossary.ts'
+import { Details, Fresh, Hint, Kpi, KpiRow, Section, Who } from './ui.tsx'
 
 type Row = { address: string; label: string | null; netUsd: number }
+
+// Table rows that need a word; bots, other labelled and unlabelled read as they are.
+const CLASS_TERM: Partial<Record<keyof typeof CLASS_LABEL, GlossaryId>> = {
+  protocol: 'protocolWallets',
+  staking: 'stakingPoolLabel',
+  'former-smart': 'formerSmart',
+  'public-figure': 'cohortPublic',
+  'hl-trader': 'cohortHl',
+}
 
 export function FlowsPanel({
   snapshot,
@@ -79,18 +89,21 @@ export function FlowsPanel({
         <Kpi
           lead
           label="Smart money net · 7d"
+          term="smartMoneyNet"
           value={formatSignedUsd(flow7d?.smart.netUsd ?? null)}
           tone={toneOf(flow7d?.smart.netUsd)}
           hint={`${formatCount(flow7d?.smart.wallets ?? null)} wallets · 1d ${formatSignedUsd(flow1d?.smart.netUsd ?? null)} · holdings ${signed(smartHeld7d)} NET`}
         />
         <Kpi
           label="DEX net · 7d"
+          term="dexNet"
           value={formatSignedUsd(dexNet)}
           tone={toneOf(dexNet)}
           hint={`${formatUsd(info?.buyVolumeUsd ?? null, true)} bought · ${formatUsd(info?.sellVolumeUsd ?? null, true)} sold`}
         />
         <Kpi
           label="Loopback borrowers · 7d"
+          term="loopbackBorrowersNet"
           value={formatSignedUsd(levered)}
           tone={toneOf(levered)}
           hint={`${view.levered.buyers} buying · ${view.levered.sellers} selling in the top 100`}
@@ -99,12 +112,14 @@ export function FlowsPanel({
 
       {adding.length + cutting.length > 0 ? (
         <div className="mt-3 grid gap-3 *:min-w-0 sm:grid-cols-2">
-          <List title="Smart money adding" rows={adding} tagsFor={tagsFor} />
-          <List title="Smart money cutting" rows={cutting} tagsFor={tagsFor} />
+          <List title="Smart money adding" term="smartAddingCutting" rows={adding} tagsFor={tagsFor} />
+          <List title="Smart money cutting" term="smartAddingCutting" rows={cutting} tagsFor={tagsFor} />
         </div>
       ) : null}
 
-      <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Top 100 wallets by label · 7d</p>
+      <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+        <Hint id="topWalletsByLabel">Top 100 wallets by label</Hint> · 7d
+      </p>
       <div className="overflow-x-auto">
         <table className="mt-1 w-full min-w-[420px] text-left text-[13px]">
           <thead className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
@@ -119,7 +134,9 @@ export function FlowsPanel({
           <tbody className="num">
             {view.segments.map((row) => (
               <tr key={row.key} className="border-b border-line last:border-b-0">
-                <td className="py-1.5 text-ink">{CLASS_LABEL[row.key]}</td>
+                <td className="py-1.5 text-ink">
+                  <Hint id={CLASS_TERM[row.key]}>{CLASS_LABEL[row.key]}</Hint>
+                </td>
                 <td className="py-1.5 text-right">{row.wallets}</td>
                 <td className="py-1.5 text-right">{formatUsd(row.boughtUsd, true)}</td>
                 <td className="py-1.5 text-right">{formatUsd(row.soldUsd, true)}</td>
@@ -142,12 +159,14 @@ export function FlowsPanel({
           <Kpi label="Holders" value={formatCount(info?.holders ?? null)} />
           <Kpi
             label="Staking pool"
+            term="stakingShare"
             value={formatRatio(view.holders.stakingShare)}
             hint={`of supply · ${view.holders.stakingChange7d === null ? '—' : signed(view.holders.stakingChange7d)} NET 7d`}
           />
-          <Kpi label="Free float" value={view.holders.freeFloat === null ? '—' : `${Math.round(view.holders.freeFloat).toLocaleString('en-US')} NET`} />
+          <Kpi label="Free float" term="freeFloat" value={view.holders.freeFloat === null ? '—' : `${Math.round(view.holders.freeFloat).toLocaleString('en-US')} NET`} />
           <Kpi
             label="Top 10 of float"
+            term="top10Float"
             value={formatRatio(view.holders.top10FreeShare)}
             hint={`${view.holders.grew7d} grew · ${view.holders.shrank7d} shrank in 7d`}
           />
@@ -166,10 +185,12 @@ function signed(value: number): string {
   return `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString('en-US', { maximumFractionDigits: 1 })}`
 }
 
-function List({ title, rows, tagsFor }: { title: string; rows: Row[]; tagsFor: (address: string) => string[] }) {
+function List({ title, term, rows, tagsFor }: { title: string; term?: GlossaryId; rows: Row[]; tagsFor: (address: string) => string[] }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">{title}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+        <Hint id={term}>{title}</Hint>
+      </p>
       <ul className="mt-1 text-[13px]">
         {rows.length === 0 ? <li className="py-1.5 text-muted">None.</li> : null}
         {rows.map((row) => (

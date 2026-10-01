@@ -1,7 +1,9 @@
 import { useId, useState } from 'react'
 import { formatNet, wadToNumber } from '../lib/format.ts'
+import type { GlossaryId } from '../lib/glossary.ts'
 import type { CurvePoint } from '../lib/uniswap.ts'
 import { NET_DECIMALS } from '../lib/units.ts'
+import { Hint } from './ui.tsx'
 
 type AggPoint = { netRaw: bigint; priceWad: bigint }
 
@@ -131,16 +133,16 @@ export function ImpactChart(props: Props) {
         </text>
       </svg>
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-muted">
-        <Legend className="bg-jade" label={props.aggLabel} />
-        <Legend className="bg-lotus" label="Canonical Uniswap v2 only" />
-        <Legend className="bg-ink" label="Spot" />
+        <Legend className="bg-jade" label={props.aggLabel} term="routerLine" />
+        <Legend className="bg-lotus" label="Canonical Uniswap v2 only" term="canonicalLine" />
+        <Legend className="bg-ink" label="Spot" term="spot" />
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-3 bg-gold/30" />
-          Buy zone
+          <Hint id="buyZone">Buy zone</Hint>
         </span>
-        <Legend className="bg-gold-ink" label="TWAP" />
-        <Legend className="bg-seal" label="Pause (TWAP × 0.85)" />
-        <Legend className="bg-muted" label="NAV" />
+        <Legend className="bg-gold-ink" label="TWAP" term="twap" />
+        <Legend className="bg-seal" label="Pause (TWAP × 0.85)" term="pauseBelow" />
+        <Legend className="bg-muted" label="NAV" term="nav" />
         <span className="num text-ink">
           {hoverNet !== null
             ? `${hoverNet.toFixed(1)} NET · router ${hoverAgg ? hoverAgg.price.toFixed(2) : '—'} · pair ${hoverCanon ? hoverCanon.price.toFixed(2) : '—'}`
@@ -212,11 +214,11 @@ function polyline(
     .join(' ')
 }
 
-function Legend({ className, label }: { className: string; label: string }) {
+function Legend({ className, label, term }: { className: string; label: string; term: GlossaryId }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={`inline-block h-0.5 w-3 ${className}`} />
-      {label}
+      <Hint id={term}>{label}</Hint>
     </span>
   )
 }

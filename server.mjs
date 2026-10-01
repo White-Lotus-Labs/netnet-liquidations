@@ -4,6 +4,7 @@ import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { handleBonds } from './bonds.mjs'
 import { handleNansen } from './nansen.mjs'
+import { handleRpc } from './rpc.mjs'
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), 'dist')
 const host = '0.0.0.0'
@@ -60,6 +61,10 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === '/api/bonds' && req.method === 'GET') {
     void handleBonds(req, res)
+    return
+  }
+  if (url.pathname === '/api/rpc') {
+    void handleRpc(req, res)
     return
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') {

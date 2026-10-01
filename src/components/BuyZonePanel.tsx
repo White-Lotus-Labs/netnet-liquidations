@@ -1,12 +1,23 @@
 import { useMemo } from 'react'
 import type { Desk } from '../types.ts'
 import { priceSpanLabel, type BuyCopy } from '../lib/buyZone.ts'
+import type { GlossaryId } from '../lib/glossary.ts'
 import { formatNet, formatPercentWad, formatUsd, formatUsdg, formatWad } from '../lib/format.ts'
 import { SCENARIO_ORDER, scenarioLabel, type ScenarioId, type ScenarioModel } from '../lib/model.ts'
 import { buildImpactView, chartQuotes, fillLabel, quoteStatusLabel, type QuoteBook } from '../lib/quoteBook.ts'
 import { WAD } from '../lib/units.ts'
 import { ImpactChart } from './ImpactChart.tsx'
-import { Chip, Details, Kpi, KpiRow, Section, Segmented } from './ui.tsx'
+import { Chip, Details, Hint, Kpi, KpiRow, Section, Segmented } from './ui.tsx'
+
+// The selected bucket's rule follows the general one. "Already liquidatable" is health under 1.
+const BUCKET_TERM: Record<ScenarioId, GlossaryId> = {
+  liquidatable: 'health',
+  hf105: 'bucketHealth',
+  hf110: 'bucketHealth',
+  hf120: 'bucketHealth',
+  top10: 'bucketTop10',
+  custom: 'bucketCustom',
+}
 
 export function BuyZonePanel({
   desk,
@@ -43,11 +54,13 @@ export function BuyZonePanel({
     impact.source === 'aggregator'
       ? {
           label: 'Router touch → avg',
+          term: 'routerTouchAvg' as const,
           value: `${formatWad(impact.routerTouch, 2)} → ${formatWad(impact.routerAvg, 2)}`,
           hint: impact.routerExact ? 'Live quote' : 'Interpolated',
         }
       : {
           label: 'Pool before → after',
+          term: 'poolBeforeAfter' as const,
           value:
             model.spotBeforeWad === null || model.spotAfterWad === null
               ? '—'
@@ -60,10 +73,18 @@ export function BuyZonePanel({
       id="buy-zone"
       testId="buy-zone"
       seal="买"
-      eyebrow="Forced NET supply · Router quotes"
+      eyebrow={
+        <>
+          <Hint id="forcedSelling">Forced NET supply</Hint> · Router quotes
+        </>
+      }
       title="Buy"
       accent="zone"
-      meta={<Chip title="Price source for the band">{loading ? quoteStatusLabel(book) : impact.providerLabel}</Chip>}
+      meta={
+        <Chip>
+          <Hint id="priceSource">{loading ? quoteStatusLabel(book) : impact.providerLabel}</Hint>
+        </Chip>
+      }
       answer={copy.headline}
     >
       {copy.alert ? (
@@ -71,7 +92,7 @@ export function BuyZonePanel({
           {copy.alert}
         </p>
       ) : null}
-      <Segmented label="Health bucket" options={options} value={scenario} onChange={onScenario} />
+      <Segmented label="Health bucket" options={options} value={scenario} onChange={onScenario} hint={['bucket', BUCKET_TERM[scenario]]} />
       {scenario === 'custom' ? (
         <label className="mt-2 flex items-center gap-2 text-xs text-muted">
           Custom USDG notional
@@ -87,17 +108,18 @@ export function BuyZonePanel({
       <div className="mt-4 grid gap-4 *:min-w-0 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <div>
           <KpiRow cols={2}>
-            <Kpi label="Debt in bucket" value={formatUsdg(model.debtRaw, 0)} hint="USDG" />
-            <Kpi label="NET sold" value={formatNet(model.flowNetRaw, 2)} hint="NET to market" />
+            <Kpi label="Debt in bucket" term="debtInBucket" value={formatUsdg(model.debtRaw, 0)} hint="USDG" />
+            <Kpi label="NET sold" term="netSold" value={formatNet(model.flowNetRaw, 2)} hint="NET to market" />
             <Kpi
               label={model.triggerKind === 'nav' ? 'NAV trigger' : 'TWAP trigger'}
+              term={model.triggerKind === 'nav' ? 'navTrigger' : 'twapTrigger'}
               value={priceSpanLabel(model.triggerLowWad, model.triggerHighWad)}
               hint={model.triggerKind === 'liquidatable' ? 'Already through' : 'USDG/NET'}
             />
-            <Kpi label={fill.label} value={fill.value} hint={fill.hint} />
+            <Kpi label={fill.label} term={fill.term} value={fill.value} hint={fill.hint} />
           </KpiRow>
           <p className="mt-3 text-xs text-muted">
-            Canonical pool depth <span className="num text-ink">{formatUsdg(desk.reserveUsdg, 0)} USDG</span>
+            <Hint id="poolDepth">Canonical pool depth</Hint> <span className="num text-ink">{formatUsdg(desk.reserveUsdg, 0)} USDG</span>
           </p>
           {impact.note && !loading ? <p className="mt-2 text-xs text-warn">{impact.note}</p> : null}
         </div>
@@ -115,9 +137,17 @@ export function BuyZonePanel({
         />
       </div>
       <Details summary="Detail">
-        {copy.detail ? <p className="text-sm leading-relaxed text-ink">{copy.detail}</p> : null}
+        {copy.detail ? (
+          <p className="text-sm leading-relaxed text-ink">
+            {copy.detail}
+            <Hint id="canonicalPool" />
+          </p>
+        ) : null}
         {impact.fills.length > 0 ? (
-          <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Route">
+          <ul className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Route">
+            <li className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+              <Hint id="routeSplit">Route</Hint>
+            </li>
             {impact.fills.map((fill) => (
               <li key={`${fill.source}-${fill.pool ?? 'none'}`}>
                 <Chip>
@@ -129,7 +159,10 @@ export function BuyZonePanel({
         ) : null}
         <ul className="mt-2 space-y-1 text-xs leading-relaxed text-muted">
           {copy.caveats.map((caveat) => (
-            <li key={caveat}>{caveat}</li>
+            <li key={caveat.text}>
+              {caveat.text}
+              <Hint id={caveat.term} />
+            </li>
           ))}
         </ul>
       </Details>

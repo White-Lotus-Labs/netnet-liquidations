@@ -119,6 +119,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Glossary slips fade in; motion-safe only. */
+@keyframes slip-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @layer components {
   .eyebrow {
     margin: 0;
@@ -199,12 +206,12 @@ body {
 }
 
 /* Unlayered on purpose: focus rings win over outline-none utilities. */
-.sheet :is(a, button, select, summary, [tabindex]):focus-visible {
+.sheet :is(a, button, select, summary, [tabindex], input[type='checkbox'], input[type='radio']):focus-visible {
   outline: 2px solid var(--color-seal);
   outline-offset: 3px;
 }
 
-.sheet :is(input, textarea):focus-visible {
+.sheet :is(input:not([type='checkbox'], [type='radio']), textarea):focus-visible {
   outline: none;
   border-color: var(--color-seal);
   box-shadow:

@@ -1,9 +1,10 @@
 // Server-side NetNet bond index for Robinhood Chain.
-// Reads bonds from the BondDepository and the three bond desks, NET supply, sNET rebases, desk inventory,
+// Reads bonds from the BondDepository and the four bond desks, NET supply, sNET rebases, desk inventory,
 // the manager sleeve's NET flows, NET/USDG candles, buyer holdings, Nansen labels, and buyers' DEX sells.
 // Refreshes only when someone asks. Keeps the last good state in memory and on disk.
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { dirname } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
@@ -95,6 +96,8 @@ const labelTtl = () => envNumber('NANSEN_TTL_MINUTES', 60, 10, 720) * 60_000
 const dexTtl = () => envNumber('BONDS_DEX_TTL_MINUTES', 180, 30, 1440) * 60_000
 const cacheFile = () => process.env.BONDS_CACHE_FILE?.trim() || '.cache/bonds.json'
 
+// Errors this module writes. Only these reach the page; any other message can quote upstream data.
+const fail = (message, extra) => Object.assign(new Error(message), { public: true }, extra)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const hex = (n) => `0x${n.toString(16)}`
 const word = (data, i) => BigInt(`0x${data.slice(2 + i * 64, 66 + i * 64) || '0'}`)
@@ -257,9 +260,9 @@ function persist() {
 const changed = () => {
   encoded = null
 }
+// Progress is in the head, which is encoded on each request.
 const setProgress = (laneName, step, done, total) => {
   progress[laneName] = { step, done, total }
-  changed()
 }
 
 /** JSON-RPC batch. Backs off on 429 and transient errors. A revert returns null for that call. */
@@ -275,7 +278,7 @@ async function rpc(calls, { url = RPC, tries = 10, pause = 600 } = {}) {
     }).catch(() => null)
     if (response && !response.ok) {
       failure = `RPC HTTP ${response.status}`
-      if (response.status !== 429 && response.status < 500) throw new Error(failure)
+      if (response.status !== 429 && response.status < 500) throw fail(failure)
     }
     const list = response?.ok ? await response.json().catch(() => null) : null
     if (list) {
@@ -283,10 +286,10 @@ async function rpc(calls, { url = RPC, tries = 10, pause = 600 } = {}) {
       let retry = false
       for (const item of [list].flat()) {
         const message = String(item?.error?.message ?? '')
-        if (/exceeds limit/i.test(message)) throw Object.assign(new Error('eth_getLogs exceeds limit'), { tooMany: true })
+        if (/exceeds limit/i.test(message)) throw fail('eth_getLogs exceeds limit', { tooMany: true })
         if (item?.error && !/revert/i.test(message)) {
           retry = true
-          failure = `RPC error ${item.error.code ?? ''}`.trim()
+          failure = Number.isInteger(item.error.code) ? `RPC error ${item.error.code}` : 'RPC error'
         } else if (Number.isInteger(item?.id)) results[item.id] = item.result ?? null
       }
       if (!retry) {
@@ -294,7 +297,7 @@ async function rpc(calls, { url = RPC, tries = 10, pause = 600 } = {}) {
         return results
       }
     }
-    if (attempt >= tries) throw new Error(failure)
+    if (attempt >= tries) throw fail(failure)
     await sleep(3000 * attempt)
   }
 }
@@ -308,7 +311,7 @@ async function blockTimes(blocks) {
     if (valid(results)) return results.map((row) => Number(row.timestamp))
   }
   const results = await rpc(calls)
-  if (!valid(results)) throw new Error('Block time missing')
+  if (!valid(results)) throw fail('Block time missing')
   return results.map((row) => Number(row.timestamp))
 }
 
@@ -316,7 +319,7 @@ async function blockTimes(blocks) {
 async function logs(filters, from, to) {
   try {
     const results = await rpc(filters.map((filter) => ['eth_getLogs', [{ ...filter, fromBlock: hex(from), toBlock: hex(to) }]]))
-    if (!results.every(Array.isArray)) throw new Error('eth_getLogs returned no list')
+    if (!results.every(Array.isArray)) throw fail('eth_getLogs returned no list')
     return results
   } catch (error) {
     if (!error.tooMany || from >= to) throw error
@@ -446,10 +449,12 @@ async function indexChain() {
 
 /** NET/USDG 4 h closes from GeckoTerminal. Older candles stay when the API window moves past them. */
 async function readPrice() {
-  const response = await fetch(CANDLES, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30_000) })
-  if (!response.ok) throw new Error(`GeckoTerminal HTTP ${response.status}`)
+  const response = await fetch(CANDLES, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30_000) }).catch(() => {
+    throw fail('GeckoTerminal unreachable')
+  })
+  if (!response.ok) throw fail(`GeckoTerminal HTTP ${response.status}`)
   const list = (await response.json().catch(() => null))?.data?.attributes?.ohlcv_list
-  if (!Array.isArray(list) || list.length === 0) throw new Error('GeckoTerminal returned no candles')
+  if (!Array.isArray(list) || list.length === 0) throw fail('GeckoTerminal returned no candles')
   const closes = new Map(state.price)
   for (const row of list) if (Number.isFinite(row?.[0]) && Number.isFinite(row?.[4])) closes.set(row[0], round(row[4], 4))
   state.price = [...closes].sort((a, b) => a[0] - b[0])
@@ -485,6 +490,8 @@ const collateral = (result) => (typeof result === 'string' && result.length >= 2
 
 async function readHoldings() {
   const wallets = state.wallets.slice()
+  // Bonds after this moment may be missing from the reads below. The client counts only bonds up to holdingsAt.
+  const startedAt = Date.now()
   // Desk bonds vest in the desk: read pendingFor on each desk the wallet bonded at.
   const deskAddress = Object.fromEntries(Object.entries(DESKS).map(([address, src]) => [src, address]))
   const desksOf = new Map()
@@ -509,7 +516,7 @@ async function readHoldings() {
       ...[DEPOSITORY, ...(desksOf.get(address) ?? [])].map((target) => [target, SEL.pendingFor + arg(address)]),
     ])
     const [data] = await rpc([['eth_call', [{ to: MULTICALL, data: aggregate3(reads.flat()) }, 'latest']]])
-    if (!data) throw new Error('Multicall3 read failed')
+    if (!data) throw fail('Multicall3 read failed')
     const results = aggregate3Results(data)
     let at = 0
     slice.forEach((address, k) => {
@@ -521,7 +528,7 @@ async function readHoldings() {
     })
   }
   state.holdings = out
-  state.holdingsAt = Date.now()
+  state.holdingsAt = startedAt
 }
 
 /** Pages through one Nansen query, 1,000 rows per page. `capped` is true when more pages remain after maxPages. */
@@ -549,7 +556,7 @@ async function nansenPages(key, url, query, maxPages) {
       if (json) break
       // Status only. Nansen error bodies can echo request details.
       const slow = status === 0 || status === 429 || status >= 500
-      if (!slow || attempt >= 3) throw Object.assign(new Error(`${url.slice(url.indexOf('tgm/'))} HTTP ${status || 'timeout'}`), { slow })
+      if (!slow || attempt >= 3) throw fail(`${url.slice(url.indexOf('tgm/'))} HTTP ${status || 'timeout'}`, { slow })
       await sleep(3000)
     }
     const data = Array.isArray(json.data) ? json.data : []
@@ -567,7 +574,7 @@ async function transfers(key, from, to) {
     date: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
     filters: { from_address: [DEPOSITORY, ...Object.keys(DESKS)] },
   }
-  return (await nansenPages(key, NANSEN, query, 100)).rows
+  return nansenPages(key, NANSEN, query, 100)
 }
 
 const volume = (value, dp) => round(Number(value) || 0, dp)
@@ -618,12 +625,15 @@ async function readLabels(key) {
     : Math.floor((state.startTime * 1000) / DAY) * DAY
   let span = 7
   let done = 0
+  let credits = 0
   while (from < end) {
     setProgress('slow', 'Nansen labels', done, done + Math.ceil((end - from) / (span * DAY)))
     const to = Math.min(from + span * DAY, end)
     let rows
     try {
-      rows = await transfers(key, from, to)
+      const read = await transfers(key, from, to)
+      rows = read.rows
+      credits += read.credits
     } catch (error) {
       if (!error.slow || span === 1) throw error
       span = span === 7 ? 3 : 1
@@ -635,6 +645,7 @@ async function readLabels(key) {
     done += 1
     persist()
   }
+  console.log(`bonds: Nansen labels read, ${done} date ranges, ${credits} credits`)
 }
 
 const due = (name, ttl) =>
@@ -649,7 +660,8 @@ async function step(name, run) {
     persist()
   } catch (error) {
     failedAt[name] = Date.now()
-    errors[name] = `${STEP_NAME[name]} failed: ${error instanceof Error ? error.message : 'unknown error'}`
+    if (!error?.public) console.warn(`bonds: ${name} failed`, error)
+    errors[name] = error?.public ? `${STEP_NAME[name]} failed: ${error.message}` : `${STEP_NAME[name]} failed.`
   } finally {
     progress[LANE_OF[name]] = null
     changed()
@@ -661,6 +673,7 @@ function lane(name, work) {
   lanes[name] ??= work()
     .catch(() => {
       errors[name] = 'Bond refresh failed.'
+      changed()
     })
     .finally(() => {
       lanes[name] = null
@@ -692,9 +705,21 @@ export function refreshBonds() {
   return Promise.all([chain, slow, dex]).then(() => {})
 }
 
-/** The BondFeed payload (see src/lib/bonds.ts). */
-export function bondsPayload() {
-  ensure()
+/** The fields that change on every chain read. The ETag leaves them out, and a 304 carries them in x-bonds-head. */
+function bondsHead() {
+  const { live } = state
+  return {
+    fetchedAt: state.at.chain ?? Date.now(),
+    status: state.at.chain ? 'ready' : 'indexing',
+    progress: progress.chain ?? progress.slow ?? progress.dex,
+    headBlock: state.headBlock,
+    headTime: state.headTime,
+    live: { bondPrice: live.bondPrice, twap: live.twap, epoch: live.epoch, epochSold: live.epochSold, supply: live.supply },
+  }
+}
+
+/** Everything else. The block column stays on the server. */
+function bondsData() {
   const { bonds, supply, live } = state
   const epochCaps = {}
   let running = 0
@@ -719,16 +744,11 @@ export function bondsPayload() {
     : null
   const key = process.env.NANSEN_API_KEY?.trim()
   return {
-    fetchedAt: state.at.chain ?? Date.now(),
-    status: state.at.chain ? 'ready' : 'indexing',
-    progress: progress.chain ?? progress.slow ?? progress.dex,
-    headBlock: state.headBlock,
-    headTime: state.headTime,
     startTime: state.startTime,
     epochSeconds: EPOCH_SECONDS,
     capBps: CAP_BPS,
     wallets: state.wallets,
-    bonds,
+    bonds: { t: bonds.t, w: bonds.w, usdg: bonds.usdg, net: bonds.net, price: bonds.price, src: bonds.src },
     epochCaps,
     index,
     indexPoints: state.indexPoints,
@@ -740,9 +760,38 @@ export function bondsPayload() {
     holdings,
     holdingsAt: state.holdingsAt,
     dex: state.dex,
-    live: { bondPrice: live.bondPrice, twap: live.twap, epoch: live.epoch, epochSold: live.epochSold, supply: live.supply },
     errors: [...Object.values(errors), ...(key ? [] : [LABELS_OFF])],
   }
+}
+
+/** The BondFeed payload (see src/lib/bonds.ts). */
+export function bondsPayload() {
+  ensure()
+  return { ...bondsHead(), ...bondsData() }
+}
+
+/**
+ * The encoded feed. The data part and its ETag change only when the data changes; the body is
+ * encoded again when the head changes too.
+ */
+function encode() {
+  if (!encoded) {
+    const data = JSON.stringify(bondsData())
+    encoded = { data, etag: `W/"${createHash('sha1').update(data).digest('base64url')}"`, head: null, json: null, gzip: null }
+  }
+  const head = JSON.stringify(bondsHead())
+  if (encoded.head !== head) {
+    const json = Buffer.from(`${head.slice(0, -1)},${encoded.data.slice(1)}`)
+    Object.assign(encoded, { head, json, gzip: gzipSync(json) })
+  }
+  return encoded
+}
+
+/** Weak comparison, as RFC 9110 asks for If-None-Match. */
+export function etagMatches(header, etag) {
+  if (typeof header !== 'string' || !header) return false
+  const strip = (tag) => tag.trim().replace(/^W\//, '')
+  return header.split(',').some((tag) => tag.trim() === '*' || strip(tag) === strip(etag))
 }
 
 /** Node http handler shared by server.mjs and the Vite dev server. */
@@ -753,18 +802,25 @@ export async function handleBonds(req, res) {
     void refreshBonds()
     // Cold start answers at once with progress. A warm read waits briefly for fresh blocks.
     if (!cold) await Promise.race([lanes.chain, sleep(WARM_WAIT_MS)])
-    encoded ??= (() => {
-      const json = Buffer.from(JSON.stringify(bondsPayload()))
-      return { json, gzip: gzipSync(json) }
-    })()
-    const gzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))
-    res.writeHead(200, {
-      'cache-control': state.at.chain ? 'public, max-age=30' : 'no-store',
-      'content-type': 'application/json; charset=utf-8',
+    const { etag, head, json, gzip } = encode()
+    const headers = {
+      'cache-control': state.at.chain ? 'no-cache' : 'no-store',
+      etag,
       vary: 'accept-encoding',
-      ...(gzip ? { 'content-encoding': 'gzip' } : {}),
+    }
+    // Same data as the copy the client holds: send the head only.
+    if (state.at.chain && etagMatches(req.headers['if-none-match'], etag)) {
+      res.writeHead(304, { ...headers, 'x-bonds-head': head })
+      res.end()
+      return
+    }
+    const zipped = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))
+    res.writeHead(200, {
+      ...headers,
+      'content-type': 'application/json; charset=utf-8',
+      ...(zipped ? { 'content-encoding': 'gzip' } : {}),
     })
-    res.end(gzip ? encoded.gzip : encoded.json)
+    res.end(zipped ? gzip : json)
   } catch {
     res.writeHead(500, { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify({ error: 'Bond feed failed.' }))

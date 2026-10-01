@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ADDRESSES, BONDS_ROUTE, LINKS, NANSEN_ROUTE, POLL_MS } from './config.ts'
+import { ADDRESSES, LINKS, NANSEN_ROUTE, POLL_MS } from './config.ts'
+import { readBonds } from './adapters/bonds.ts'
 import { readCredit } from './adapters/credit.ts'
 import { loadDesk } from './adapters/loadDesk.ts'
 import { readPendle } from './adapters/pendle.ts'
@@ -12,7 +13,7 @@ import { LoopPanel } from './components/LoopPanel.tsx'
 import { MusicToggle } from './components/MusicToggle.tsx'
 import { OracleStrip } from './components/OracleStrip.tsx'
 import { Petals } from './components/Petals.tsx'
-import type { BondFeed } from './lib/bonds.ts'
+import { Hint } from './components/ui.tsx'
 import { describeBuyZone } from './lib/buyZone.ts'
 import { labelMap, type NansenSnapshot } from './lib/flows.ts'
 import { cx, formatAge, formatWarsaw, parseUsdgInput, shortAddress } from './lib/format.ts'
@@ -52,7 +53,9 @@ export default function App() {
   const bonds = usePolled(readBonds, bondsMs, refreshKey)
   const wantBondsMs = bonds.data?.status === 'indexing' ? BONDS_INDEXING_POLL_MS : BONDS_POLL_MS
   if (wantBondsMs !== bondsMs) setBondsMs(wantBondsMs)
-  const borrowers = useMemo(() => new Set(desk.positions.map((position) => position.address.toLowerCase())), [desk])
+  // Keyed on the addresses, so a desk poll with the same borrowers keeps the Set and the bond panel skips its rebuild.
+  const borrowerKey = useMemo(() => [...new Set(desk.positions.map((position) => position.address.toLowerCase()))].sort().join(','), [desk])
+  const borrowers = useMemo(() => new Set(borrowerKey ? borrowerKey.split(',') : []), [borrowerKey])
   const vaultBorrowers = useMemo(
     () => new Set((credit.data?.exposures ?? []).filter((row) => row.share > 0.05).map((row) => row.address.toLowerCase())),
     [credit.data],
@@ -186,7 +189,7 @@ export default function App() {
               data-testid="mode-badge"
             >
               <span aria-hidden="true" className={cx('size-[7px] rounded-full', badge.dot)} />
-              {badge.label}
+              <Hint id="modeBadge">{badge.label}</Hint>
             </span>
             <span className="num text-[rgb(243_234_217/0.75)]" title={formatWarsaw(desk.fetchedAt)}>
               {desk.blockNumber ? `Block ${desk.blockNumber.toLocaleString('en-US')}` : 'Block unavailable'}
@@ -314,13 +317,6 @@ function usePolled<T>(load: (signal: AbortSignal) => Promise<T>, everyMs: number
 async function readNansen(signal: AbortSignal): Promise<NansenSnapshot> {
   const response = await fetch(NANSEN_ROUTE, { signal })
   const body = (await response.json().catch(() => null)) as (NansenSnapshot & { error?: string }) | null
-  if (!response.ok || !body || body.error) throw new Error(body?.error ?? `HTTP ${response.status}`)
-  return body
-}
-
-async function readBonds(signal: AbortSignal): Promise<BondFeed> {
-  const response = await fetch(BONDS_ROUTE, { signal })
-  const body = (await response.json().catch(() => null)) as (BondFeed & { error?: string }) | null
   if (!response.ok || !body || body.error) throw new Error(body?.error ?? `HTTP ${response.status}`)
   return body
 }

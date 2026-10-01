@@ -14,6 +14,7 @@ const ttlMinutes = (() => {
 let cached = null
 let inflight = null
 let failedAt = 0
+let credits = 0 // Nansen credits spent by the read in flight, from x-nansen-credits-cost
 const RETRY_MS = 5 * 60_000
 
 const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null)
@@ -29,7 +30,11 @@ async function post(path, body, key) {
   })
   // Status only. Nansen error bodies can echo request details.
   if (!response.ok) throw new Error(`${path} HTTP ${response.status}`)
-  return response.json()
+  credits += Number(response.headers.get('x-nansen-credits-cost')) || 0
+  // A JSON parse error quotes the body, so it gets a fixed message.
+  return response.json().catch(() => {
+    throw new Error(`${path} sent no JSON`)
+  })
 }
 
 function range(days) {
@@ -111,6 +116,7 @@ async function build(key) {
     wsHolders: ['tgm/holders', { chain: CHAIN, token_address: WSNET, label_type: 'all_holders', pagination: { page: 1, per_page: 300 }, order_by: [{ field: 'token_amount', direction: 'DESC' }] }, (p) => rows(p).map(holder)],
   }
   const names = Object.keys(jobs)
+  credits = 0
   const settled = await Promise.allSettled(names.map((name) => post(jobs[name][0], jobs[name][1], key)))
   const body = { fetchedAt: Date.now(), ttlMinutes, stale: false, errors: [] }
   settled.forEach((result, i) => {
@@ -122,6 +128,7 @@ async function build(key) {
       body.errors.push(result.reason instanceof Error ? result.reason.message : `${name} failed`)
     }
   })
+  console.log(`nansen: snapshot read, ${names.length} calls, ${credits} credits`)
   if (body.errors.length === names.length) throw new Error(body.errors[0] ?? 'Nansen unavailable')
   return body
 }
