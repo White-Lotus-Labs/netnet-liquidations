@@ -6,6 +6,8 @@ The buy zone shows **where to bid NET** when Morpho Loopback liquidations force 
 
 It is a decision tool. It does not connect a wallet and it does not send transactions.
 
+Sakura petals drift behind the sheet, and the backdrop leans with the pointer. Reduced motion turns petals and parallax off. Music starts at the first click or key press. The music button in the header turns it off; the choice is saved.
+
 Chain: Robinhood Chain, id **4663**. Market: Morpho Blue wsNET/USDG at 62.5% LLTV.
 
 `0xaa586d26a6fe62d9c0f0948fede6e2130500ac7a655587447e2d4a37e6330589`
