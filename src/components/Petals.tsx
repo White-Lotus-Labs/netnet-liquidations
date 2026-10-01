@@ -15,8 +15,9 @@ import {
 const REDUCED = '(prefers-reduced-motion: reduce)'
 const COARSE = '(pointer: coarse)'
 const NARROW = '(max-width: 639.98px)'
-// Petals start this far outside the view so they never pop in at an edge.
-const MARGIN = 40
+// Petals wrap this far outside the view so they never pop at an edge:
+// widest sway (26 x 1.15) plus the largest petal's reach (about 26 px).
+const MARGIN = 56
 // A long frame (tab switch, GC) must not throw the field forward.
 const MAX_DT = 0.05
 // A still frame to start from: petals mid-fall, not stacked at spawn.

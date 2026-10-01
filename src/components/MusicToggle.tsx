@@ -39,7 +39,11 @@ export function MusicToggle({ className }: { className?: string }) {
     if (current.kind === 'buffer') {
       const { context, gain } = current
       if (document.hidden) {
-        void context.suspend()
+        // Duck quickly, then sleep; the next show fades back in from silence.
+        gain.gain.setTargetAtTime(0, context.currentTime, 0.04)
+        window.setTimeout(() => {
+          if (document.hidden) void context.suspend()
+        }, 200)
         return
       }
       if (audible) void context.resume()
@@ -55,6 +59,7 @@ export function MusicToggle({ className }: { className?: string }) {
     window.clearInterval(current.ramp)
     if (document.hidden) {
       element.pause()
+      element.volume = 0
       return
     }
     if (audible) element.play().catch(() => undefined)
@@ -92,6 +97,8 @@ export function MusicToggle({ className }: { className?: string }) {
           return
         }
         if (player.current?.kind === 'element') window.clearInterval(player.current.ramp)
+        element.pause()
+        element.removeAttribute('src')
         player.current = null
         setPlaying(false)
         giveUp()

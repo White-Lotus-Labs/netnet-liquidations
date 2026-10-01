@@ -76,6 +76,8 @@ body {
   inset: -3%;
   width: 106%;
   height: 106%;
+  /* Preflight caps images at 100%; the lean needs the extra 6%. */
+  max-width: none;
   object-fit: cover;
   object-position: 50% 42%;
   transform-origin: 50% 60%;
