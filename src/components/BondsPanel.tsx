@@ -25,7 +25,7 @@ import {
   type BondWindow,
   type EpochRow,
 } from '../lib/bonds.ts'
-import { cx, formatClock, formatCount, formatRatio, formatSignedUsd, formatUsd } from '../lib/format.ts'
+import { cx, decimals, formatClock, formatCount, formatRatio, formatSignedUsd, formatUsd } from '../lib/format.ts'
 import { BondChart, type Layer, type Marker } from './BondChart.tsx'
 import { Details, Fresh, Kpi, KpiRow, Progress, Section, Segmented, Who } from './ui.tsx'
 
@@ -55,12 +55,12 @@ const GROUP_PAINT: Record<BondGroup, string> = {
   mixed: 'rgb(74 47 29 / 0.2)',
   mover: 'rgb(101 86 63 / 0.45)',
   left: 'rgb(101 86 63 / 0.45)',
-  weak: 'var(--color-rod)',
+  weak: 'var(--color-brocade)',
   mercenary: 'var(--color-gold)',
   arbitrageur: 'var(--color-gold-ink)',
   unknown: 'hatch',
 }
-const SOURCE_PAINT: Record<BondSource, string> = { 0: 'var(--color-lotus)', 1: 'var(--color-gold-ink)', 2: 'var(--color-gold)', 3: 'var(--color-jade)', 4: 'var(--color-rod)' }
+const SOURCE_PAINT: Record<BondSource, string> = { 0: 'var(--color-lotus)', 1: 'var(--color-gold-ink)', 2: 'var(--color-gold)', 3: 'var(--color-jade)', 4: 'rgb(61 37 21 / 0.4)' }
 // Short enough for the tooltip. The depository mints at bond time; v3 sells NET the manager sleeve bought back.
 const SOURCE_NAME: Record<BondSource, string> = { 0: 'Depository · minted', 1: SOURCE_LABEL[1], 2: SOURCE_LABEL[2], 3: 'v3 desk · buybacks', 4: SOURCE_LABEL[4] }
 
@@ -79,6 +79,8 @@ const OUTCOME: ReadonlyArray<{ key: keyof BondOutcome; name: string; paint: stri
 const KEPT = ['vesting', 'staked', 'wrapped', 'looped', 'liquid'] as const
 
 const LABELS_OFF = 'Nansen labels are off on this server.'
+// Rows in the longer buyer list. The CSV has every wallet.
+const SHOW_MAX = 100
 const SUBHEAD = 'text-[10px] font-semibold uppercase tracking-[0.12em] text-muted'
 const CARD_TITLE = 'text-[10.5px] font-bold uppercase tracking-[0.16em] text-brocade'
 const CARD = 'rounded-md border border-line bg-[rgb(255_252_243/0.5)] px-3 py-3 sm:px-4'
@@ -114,21 +116,17 @@ export function BondsPanel({
     const timer = window.setInterval(tick, 30_000)
     return () => window.clearInterval(timer)
   }, [])
-  const view = useMemo(() => {
+  // Work that does not depend on the window: the all-time summary, groups, and markers.
+  const base = useMemo(() => {
     if (!feed || feed.status !== 'ready') return null
     const now = Math.max(feed.headTime ?? 0, Math.floor(feed.fetchedAt / 1000))
-    const cohortOf = (address: string) => bondCohort(address, feed, labels)
-    const summary = bondSummary(feed, { window: period, now, cohortOf, borrowers, sellers })
-    const launch = period === 'all' ? summary : bondSummary(feed, { window: 'all', now, cohortOf })
-    const buyers = bondBuyers(feed, { window: period, now, cohortOf, borrowers, sellers, extraLabels: labels })
-    const groups = walletGroups(feed, now)
-    // The completed epochs of the window, then the open one.
-    const epochs = epochSeries(feed, {
-      fromEpoch: summary.current.epoch - summary.epochsInWindow,
-      toEpoch: summary.current.epoch,
-      cohortOf,
-      groupOf: (address) => groups.get(address) ?? 'unknown',
-    })
+    // One lookup per wallet per feed; the summaries and series ask for the same wallets many times.
+    const cohorts = new Map<string, BondCohort>()
+    const cohortOf = (address: string) => {
+      let cohort = cohorts.get(address)
+      if (cohort === undefined) cohorts.set(address, (cohort = bondCohort(address, feed, labels)))
+      return cohort
+    }
     const epochAt = (t: number) => Math.floor((t - feed.startTime) / feed.epochSeconds)
     const starts = sourceStarts(feed)
     const markers: Marker[] = [
@@ -138,8 +136,24 @@ export function BondsPanel({
       }),
       { epoch: epochAt(V3_LAUNCH.at), label: 'v3 · bonds from buybacks, no mint', short: 'v3 · buybacks', tone: 'seal' },
     ]
+    return { feed, now, cohortOf, launch: bondSummary(feed, { window: 'all', now, cohortOf }), groups: walletGroups(feed, now), markers }
+  }, [feed, labels])
+
+  const view = useMemo(() => {
+    if (!base) return null
+    const { feed, now, cohortOf, groups, markers } = base
+    const summary = bondSummary(feed, { window: period, now, cohortOf, borrowers, sellers })
+    const launch = period === 'all' ? summary : base.launch
+    const buyers = bondBuyers(feed, { window: period, now, cohortOf, borrowers, sellers, extraLabels: labels })
+    // The completed epochs of the window, then the open one.
+    const epochs = epochSeries(feed, {
+      fromEpoch: summary.current.epoch - summary.epochsInWindow,
+      toEpoch: summary.current.epoch,
+      cohortOf,
+      groupOf: (address) => groups.get(address) ?? 'unknown',
+    })
     return { now, summary, launch, buyers, epochs, markers, dynamics: bondDynamics(summary, launch, buyers) }
-  }, [feed, period, labels, borrowers, sellers])
+  }, [base, period, labels, borrowers, sellers])
 
   const layers = useMemo((): Layer[] => {
     const rows = view?.epochs ?? []
@@ -184,7 +198,7 @@ export function BondsPanel({
   const span = SPAN[period]
   const allTime = period === 'all'
   const failed = feed.errors.filter((message) => message !== LABELS_OFF)
-  const top = expanded ? buyers : buyers.slice(0, 10)
+  const top = buyers.slice(0, expanded ? SHOW_MAX : 10)
   const { bondPrice, twap } = feed.live
   const discount = summary.discount
   const tickNow = Math.max(now, clock)
@@ -228,7 +242,7 @@ export function BondsPanel({
       <p className="mt-1 border-t border-paper/20 pt-1 font-medium text-paper/80">
         Price {fixed(row.price, 2)} · bond fill {fixed(row.avgPrice, 2)} USDG
         <br />
-        {formatCount(row.wallets)} wallets · {formatCount(row.newWallets)} new
+        {formatCount(row.wallets)} wallets · {formatCount(row.newWallets)} first-time
       </p>
     </>
   )
@@ -317,7 +331,7 @@ export function BondsPanel({
                 <span className="text-[0.7em] text-muted"> NET</span>
               </>
             }
-            hint={`${formatUsd(totals.usdg, true)} · ${formatCount(totals.wallets)} wallets${allTime ? '' : ` · ${formatCount(totals.newWallets)} new`}`}
+            hint={`${formatUsd(totals.usdg, true)} · ${formatCount(totals.wallets)} wallets${allTime ? '' : ` · ${formatCount(totals.newWallets)} first-time`}`}
           />
           <Kpi
             label={`Minted vs desk stock · ${span}`}
@@ -436,6 +450,7 @@ export function BondsPanel({
         <p className={SUBHEAD}>Top bond buyers · {span}</p>
         <div className="overflow-x-auto">
           <table className="mt-1 w-full min-w-[860px] border-collapse text-left text-[13px]">
+            <caption className="sr-only">Top bond buyers, {span}</caption>
             <thead className={SUBHEAD}>
               <tr className="border-b border-line">
                 <th className={TH}>Who</th>
@@ -463,7 +478,7 @@ export function BondsPanel({
               {top.map((buyer, rank) => (
                 <tr key={buyer.address} className="border-b border-line last:border-b-0 hover:bg-[rgb(184_145_63/0.1)]">
                   <td className={TD}>
-                    <Who address={buyer.address} label={buyer.label} tags={buyerTags(buyer, rank, allTime)} />
+                    <Who stacked address={buyer.address} label={buyer.label} tags={buyerTags(buyer, rank, allTime, expanded)} />
                   </td>
                   <td className={TD}>
                     <GroupName group={buyer.group} />
@@ -484,7 +499,7 @@ export function BondsPanel({
         <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold tracking-[0.06em]">
           {buyers.length > 10 ? (
             <button type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} className={BUTTON}>
-              {expanded ? 'Show top 10' : `Show all ${formatCount(buyers.length)}`}
+              {expanded ? 'Show top 10' : buyers.length > SHOW_MAX ? `Show top ${SHOW_MAX}` : `Show all ${formatCount(buyers.length)}`}
             </button>
           ) : null}
           {buyers.length > 0 ? (
@@ -494,6 +509,9 @@ export function BondsPanel({
               </svg>
               Download CSV
             </button>
+          ) : null}
+          {expanded && buyers.length > SHOW_MAX ? (
+            <p className="self-center font-normal tracking-normal text-muted">The CSV lists all {formatCount(buyers.length)} wallets.</p>
           ) : null}
         </div>
       </div>
@@ -518,6 +536,7 @@ export function BondsPanel({
           Desk stock is NET deposited into the bond desks. Since launch, {fixed(launch.buyback.depositedMinted, 0)} of {fixed(launch.buyback.deposited, 0)} NET was minted
           in the deposit transaction. Only the v3 desk sells NET that the manager sleeve bought back on the DEX.
         </p>
+        <p>The genesis bond and the OTC desk also paid NET, outside the public bonds. That NET is not in this section.</p>
       </div>
     </Section>
   )
@@ -577,6 +596,7 @@ function GroupTable({ summary, hasDex }: { summary: BondSummary; hasDex: boolean
   return (
     <div className="overflow-x-auto">
       <table className="mt-1 w-full min-w-[680px] border-collapse text-left text-[13px]">
+        <caption className="sr-only">Buyer groups</caption>
         <thead className={SUBHEAD}>
           <tr className="border-b border-line">
             <th className={TH}>Group</th>
@@ -687,10 +707,11 @@ function NowBar({ buyer }: { buyer: BondBuyer }) {
   )
 }
 
-function buyerTags(buyer: BondBuyer, rank: number, allTime: boolean): string[] {
+// The default view is the top 10, so the rank tag shows only in the longer list.
+function buyerTags(buyer: BondBuyer, rank: number, allTime: boolean, expanded: boolean): string[] {
   const tags: string[] = []
-  if (rank < 10) tags.push('Whale')
-  if (!allTime && buyer.isNew) tags.push('New')
+  if (expanded && rank < 10) tags.push('Top 10')
+  if (!allTime && buyer.isNew) tags.push('First bond in window')
   return [...tags, ...buyer.tags]
 }
 
@@ -702,7 +723,7 @@ function epochStatus(row: EpochRow, open: boolean, closesAt: number, now: number
 
 function chartLine(summary: BondSummary): string {
   if (summary.epochsInWindow === 0) return 'No epoch has closed in this window yet.'
-  const parts = [`${summary.soldOutCount} of ${summary.epochsInWindow} epochs sold out.`]
+  const parts = [`The depository cap filled in ${summary.soldOutCount} of ${summary.epochsInWindow} epochs.`]
   if (summary.medianSoldOutAfter !== null) parts.push(`Median sell-out: ${duration(summary.medianSoldOutAfter)}.`)
   if (summary.fromInventory > 0) parts.push(`Bond desks sold ${fixed(summary.fromInventory, 0)} NET more, outside the cap.`)
   return parts.join(' ')
@@ -712,7 +733,7 @@ const walletCount = (count: number) => `${formatCount(count)} ${count === 1 ? 'w
 
 function fixed(value: number | null, digits: number): string {
   if (value === null || !Number.isFinite(value)) return '—'
-  return value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+  return decimals(digits).format(value)
 }
 
 /** "45 s", "12 m", "3 h 05 m", "4 d 2 h". */

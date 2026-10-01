@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeBond, inventoryRow, sleeveFlows } from '../../bonds.mjs'
+import { decodeBond, etagMatches, inventoryRow, sleeveFlows } from '../../bonds.mjs'
 import {
   bondBuyers,
   bondCohort,
@@ -55,7 +55,6 @@ const feed: BondFeed = {
     usdg: rows.map((row) => row[2]),
     net: rows.map((row) => row[3]),
     price: rows.map(() => 100),
-    block: rows.map((_, i) => i + 1),
     src: rows.map(() => 0),
   },
   epochCaps: { 0: 10, 1: 10, 3: 12 },
@@ -195,6 +194,13 @@ describe('what buyers did with the NET', () => {
     expect(withDex['0xd'].dexSold).toBe(0)
   })
 
+  it('nets DEX buys out of the sold share for the CSV', () => {
+    expect(plain['0xc'].netSold).toBeNull()
+    expect(withDex['0xc'].netSold).toBeCloseTo((3 - 1) / 4.4)
+    expect(withDex['0xb'].netSold).toBeCloseTo(0.5) // capped at what left the wallet, like the gross share
+    expect(withDex['0xd'].netSold).toBe(0)
+  })
+
   it('groups each wallet by the first rule that matches', () => {
     const groups = (by: typeof plain) => Object.fromEntries(Object.values(by).map((buyer) => [buyer.address, buyer.group]))
     // Without DEX data, sold and moved are one group.
@@ -264,11 +270,11 @@ describe('what buyers did with the NET', () => {
     const buyers = bondBuyers(dexFeed, { window: '24h', now, cohortOf })
     const [header, ...lines] = buyersCsv(buyers, '24h').split('\n')
     expect(header).toBe(
-      'address,label,cohort,bonded_net_24h,bonded_usdg_24h,bonds_24h,epochs_24h,first_bond,last_bond_24h,group,sources_24h,vesting_pct,staked_pct,wrapped_pct,looped_pct,liquid_pct,sold_pct,moved_pct,dex_sold_net_24h,dex_sold_usd_24h',
+      'address,label,cohort,bonded_net_24h,bonded_usdg_24h,bonds_24h,epochs_24h,first_bond,last_bond_24h,group,sources_24h,vesting_pct,staked_pct,wrapped_pct,looped_pct,liquid_pct,sold_pct,moved_pct,net_sold_pct,dex_sold_net_24h,dex_sold_usd_24h,dex_bought_net_24h,dex_net_sold_net_24h',
     )
     expect(lines).toHaveLength(9)
     expect(lines.find((line) => line.startsWith('0xa,'))).toBe(
-      '0xa,🤓 Smart Trader,Smart money,1,110,1,1,2026-07-17T16:34:02.000Z,2026-07-18T00:33:32.000Z,Strong hands,Bond depository,0,63.64,36.36,0,0,0,0,1,100',
+      '0xa,🤓 Smart Trader,Smart money,1,110,1,1,2026-07-17T16:34:02.000Z,2026-07-18T00:33:32.000Z,Strong hands,Bond depository,0,63.64,36.36,0,0,0,0,0,1,100,0,1',
     )
     // Quotes and commas are escaped; a formula-like label is defused.
     expect(buyersCsv([{ ...buyers[0], label: '=HYPERLINK("x"), y' }], '24h')).toContain(`,"'=HYPERLINK(""x""), y",`)
@@ -309,14 +315,14 @@ describe('bond summary', () => {
   })
 
   it('writes a plain headline, led by buyer groups once holdings are read', () => {
-    expect(bondHeadline(summary)).toBe('Bonds sold out in 1 of 3 epochs since launch. Wallets whose NET left bought 40% of bonded NET since launch, strong hands 27%.')
+    expect(bondHeadline(summary)).toBe('Depository bonds sold out in 1 of 3 epochs since launch. Wallets whose NET left bought 40% of bonded NET since launch, strong hands 27%.')
     expect(bondHeadline(bondSummary(feed, { window: '24h', now, cohortOf }))).toBe(
-      'Bonds sold out in 1 of the last 3 epochs. Loopers bought 35% of bonded NET in the last day, wallets whose NET left 18%.',
+      'Depository bonds sold out in 1 of the last 3 epochs. Loopers bought 35% of bonded NET in the last day, wallets whose NET left 18%.',
     )
     const unread = { ...feed, holdings: null }
-    expect(bondHeadline(bondSummary(unread, { window: 'all', now, cohortOf }))).toBe('Bonds sold out in 1 of 3 epochs since launch. Smart money bought 27% of bonded NET since launch.')
+    expect(bondHeadline(bondSummary(unread, { window: 'all', now, cohortOf }))).toBe('Depository bonds sold out in 1 of 3 epochs since launch. Smart money bought 27% of bonded NET since launch.')
     expect(bondHeadline(bondSummary(unread, { window: '24h', now, cohortOf }))).toBe(
-      'Bonds sold out in 1 of the last 3 epochs. Unlabelled wallets bought 18% of bonded NET in the last day; smart money bought 12%.',
+      'Depository bonds sold out in 1 of the last 3 epochs. Unlabelled wallets bought 18% of bonded NET in the last day; smart money bought 12%.',
     )
   })
 
@@ -346,6 +352,7 @@ const deskRows: Array<[number, number, number | null, number, BondSource]> = [
   ...rows.map(([t, w, usdg, net]): [number, number, number | null, number, BondSource] => [t, w, usdg, net, 0]),
   [S + E + 300, 1, 60, 0.5, 1], // 0xb at the RWA desk v2
   [S + 3 * E + 200, 0, 420, 1, 3], // 0xa at the v3 desk
+  [S + E + 400, 2, 30, 0.25, 4], // 0xc at the RWA desk v1, after its depository bond
 ]
 deskRows.sort((a, b) => a[0] - b[0])
 const deskFeed: BondFeed = {
@@ -356,11 +363,11 @@ const deskFeed: BondFeed = {
     usdg: deskRows.map((row) => row[2]),
     net: deskRows.map((row) => row[3]),
     price: deskRows.map(() => 100),
-    block: deskRows.map((_, i) => i + 1),
     src: deskRows.map((row) => row[4]),
   },
   inventory: [
     [S + E + 10, 1, 0.5, 1],
+    [S + E + 20, 4, 0.25, 1],
     [S + 3 * E + 150, 3, 1, 0],
   ],
   sleeve: [
@@ -378,24 +385,31 @@ const deskFeed: BondFeed = {
 describe('bond sources', () => {
   it('splits bonded NET by source, minted against desk stock', () => {
     const all = bondSummary(deskFeed, { window: 'all', now, cohortOf })
-    expect(all.sources.map((source) => source.bonds)).toEqual([14, 1, 0, 1, 0])
+    expect(all.sources.map((source) => source.bonds)).toEqual([14, 1, 0, 1, 1])
     expect(all.sources[1]).toEqual({ bonds: 1, net: 0.5, usdg: 60 })
     expect(all.minted).toBeCloseTo(18.52)
-    expect(all.fromInventory).toBeCloseTo(1.5)
-    expect(all.totals.net).toBeCloseTo(20.02)
-    expect(all.buyback).toEqual({ buys: 1, net: 2, usd: 900, deposited: 1.5, depositedMinted: 0.5, v3Sold: 1 })
+    expect(all.fromInventory).toBeCloseTo(1.75)
+    expect(all.totals.net).toBeCloseTo(20.27)
+    expect(all.minted + all.fromInventory).toBeCloseTo(all.totals.net)
+    expect(all.buyback).toEqual({ buys: 1, net: 2, usd: 900, deposited: 1.75, depositedMinted: 0.75, v3Sold: 1 })
     const recent = bondSummary(deskFeed, { window: '24h', now, cohortOf })
-    expect(recent.sources.map((source) => source.net)).toEqual([8.5, 0.5, 0, 1, 0])
+    expect(recent.sources.map((source) => source.net)).toEqual([8.5, 0.5, 0, 1, 0.25])
     const lines = bondDynamics(all, all, bondBuyers(deskFeed, { window: 'all', now, cohortOf }))
-    expect(lines).toContain("Bond desks sold 1.5 of 20 bonded NET since launch. The v3 desk sold 1 NET from the manager sleeve's stock.")
+    expect(lines).toContain("Bond desks sold 1.8 of 20.3 bonded NET since launch. The v3 desk sold 1 NET from the manager sleeve's stock.")
     expect(lines).toContain('The manager sleeve bought 2 NET on the DEX since launch for 900 USDG.')
-    expect(sourceStarts(deskFeed)).toEqual([S + 30, S + E + 300, null, S + 3 * E + 200, null])
+    // A wallet that bonded at the depository and at desk v1 counts both in expected NET, with staking growth.
+    const before = byAddress(bondBuyers(feed, { window: 'all', now, cohortOf }))['0xc']
+    const after = byAddress(bondBuyers(deskFeed, { window: 'all', now, cohortOf }))['0xc']
+    expect(after.expected - before.expected).toBeCloseTo(0.25 * 1.1)
+    expect(after.bySource).toEqual([before.bonded, 0, 0, 0, 0.25])
+    expect(after.split!.left).toBeGreaterThan(before.split!.left)
+    expect(sourceStarts(deskFeed)).toEqual([S + 30, S + E + 300, null, S + 3 * E + 200, S + E + 400])
   })
 
   it('keeps the cap on depository bonds and adds desk bonds, groups, and price to each epoch', () => {
     const groups = walletGroups(deskFeed, now)
     const series = epochSeries(deskFeed, { fromEpoch: 0, toEpoch: 3, cohortOf, groupOf: (address) => groups.get(address) ?? 'unknown' })
-    expect(series[1]).toMatchObject({ sold: 2.5, net: 3, bySource: [2.5, 0.5, 0, 0, 0], soldOut: false })
+    expect(series[1]).toMatchObject({ sold: 2.5, net: 3.25, bySource: [2.5, 0.5, 0, 0, 0.25], soldOut: false })
     expect(series[1].fill).toBeCloseTo(0.25)
     expect(series[3]).toMatchObject({ sold: 6, net: 7, bySource: [6, 0, 0, 1, 0], soldOutAfter: null })
     // 0xa's v3 bond is not in its holdings: 1 of 6.5 expected NET left, so it trims instead of holding strong.
@@ -508,5 +522,17 @@ describe('bond log decoding', () => {
       { block: 0x13, net: 100, kind: 'desk', usd: 0 },
       { block: 0x14, net: 5, kind: 'other-out', usd: 0 },
     ])
+  })
+})
+
+describe('etagMatches', () => {
+  it('compares weakly and reads lists', () => {
+    expect(etagMatches('W/"abc"', 'W/"abc"')).toBe(true)
+    expect(etagMatches('"abc"', 'W/"abc"')).toBe(true)
+    expect(etagMatches('W/"x", W/"abc"', 'W/"abc"')).toBe(true)
+    expect(etagMatches('*', 'W/"abc"')).toBe(true)
+    expect(etagMatches('W/"abd"', 'W/"abc"')).toBe(false)
+    expect(etagMatches(undefined, 'W/"abc"')).toBe(false)
+    expect(etagMatches('', 'W/"abc"')).toBe(false)
   })
 })

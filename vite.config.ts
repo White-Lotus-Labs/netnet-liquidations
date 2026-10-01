@@ -4,6 +4,7 @@ import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { handleBonds } from './bonds.mjs'
 import { handleNansen } from './nansen.mjs'
+import { handleRpc } from './rpc.mjs'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -24,10 +25,12 @@ export default defineConfig(({ mode }) => {
       configureServer(server) {
         server.middlewares.use('/api/nansen', (req, res) => void handleNansen(req, res))
         server.middlewares.use('/api/bonds', (req, res) => void handleBonds(req, res))
+        server.middlewares.use('/api/rpc', (req, res) => void handleRpc(req, res))
       },
       configurePreviewServer(server) {
         server.middlewares.use('/api/nansen', (req, res) => void handleNansen(req, res))
         server.middlewares.use('/api/bonds', (req, res) => void handleBonds(req, res))
+        server.middlewares.use('/api/rpc', (req, res) => void handleRpc(req, res))
       },
     },
   ],

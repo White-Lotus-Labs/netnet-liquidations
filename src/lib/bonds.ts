@@ -12,7 +12,7 @@ export type BondFeed = {
   epochSeconds: number // 28800
   capBps: number // 25
   wallets: string[] // lowercase, index = wallet id
-  bonds: { t: number[]; w: number[]; usdg: Array<number | null>; net: number[]; price: number[]; block: number[]; src: BondSource[] }
+  bonds: { t: number[]; w: number[]; usdg: Array<number | null>; net: number[]; price: number[]; src: BondSource[] }
   epochCaps: Record<string, number> // epoch → cap NET (supply before the epoch's first bond × 0.0025); includes the current epoch from live supply
   index: number | null // sNET index now (NET per wsNET)
   indexPoints: Array<[number, number]> // [unix s, index] from LogRebase, ascending
@@ -160,13 +160,13 @@ export const GROUPS: BondGroup[] = ['protocol', 'new', 'arbitrageur', 'weak', 'm
 
 export const GROUP_INFO: Record<BondGroup, { name: string; info: string }> = {
   protocol: { name: 'Protocol wallets', info: "NetNet's own contracts and team wallets." },
-  new: { name: 'New buyers', info: 'First bond under 48 h, still vesting.' },
-  arbitrageur: { name: 'Arbitrageurs', info: 'Bond, vest, sell, repeat: sold 80%+ over 3+ epochs.' },
+  new: { name: 'New buyers', info: 'First bond in the last 48 h, half or more still vesting.' },
+  arbitrageur: { name: 'Arbitrageurs', info: 'Bonded in 3+ epochs, sold 80%+ on the DEX.' },
   weak: { name: 'Weak hands', info: 'Sold half or more below their bond cost.' },
   mercenary: { name: 'Mercenaries', info: 'Sold half or more at a profit.' },
   mover: { name: 'Movers', info: 'Half or more left the wallet, not through the DEX.' },
   left: { name: 'Left the wallet', info: 'Half or more left the wallet. DEX sells are not read yet, so sold and moved are one group.' },
-  looper: { name: 'Loopers', info: 'Posted most of it as Loopback collateral.' },
+  looper: { name: 'Loopers', info: 'Still hold half or more. Half or more of that is Loopback collateral.' },
   strong: { name: 'Strong hands', info: 'Still hold 80%+, sold under 10%.' },
   trimmer: { name: 'Trimmers', info: 'Still hold half or more.' },
   mixed: { name: 'Mixed', info: 'No rule above fits.' },
@@ -424,7 +424,9 @@ export type BondBuyer = {
   pnl: number | null
   dexSold: number | null // NET sold on the DEX in the window; null without DEX data
   dexSoldUsd: number | null
-  dexBought: number | null // NET bought on the DEX in the window
+  dexBought: number | null // NET bought on the DEX in the window; null when the wallet sold none (Nansen lists sellers only)
+  /** All time, share of expected NET: DEX sells minus DEX buys, floored at 0, capped at `split.left`. Null without DEX data. */
+  netSold: number | null
   tags: string[]
 }
 
@@ -465,6 +467,7 @@ function buyersIn(feed: BondFeed, stats: WalletStat[], { window, now, cohortOf, 
     const held = position ? sizeOf(position) : null
     const allTime = soldAll ? (soldAll[address] ?? [0, 0, 0, 0]) : null
     const split = position ? outcomeSplit(position, stat.expected, allTime ? allTime[0] : null) : null
+    const netSold = split && allTime ? Math.min(split.left, Math.max(0, allTime[0] - allTime[2]) / stat.expected) : null
     const pnl = allTime && stat.expected > 0 ? allTime[1] - stat.paid * Math.min(1, allTime[0] / stat.expected) : null
     const trades = dex ? (dex[address] ?? [0, 0, 0, 0]) : null
     const tags: string[] = []
@@ -499,7 +502,9 @@ function buyersIn(feed: BondFeed, stats: WalletStat[], { window, now, cohortOf, 
       pnl,
       dexSold: trades?.[0] ?? null,
       dexSoldUsd: trades?.[1] ?? null,
-      dexBought: trades?.[2] ?? null,
+      // The DEX read lists sellers only, so a wallet that only bought has no row: unknown, not 0.
+      dexBought: dex?.[address]?.[2] ?? null,
+      netSold,
       tags,
     })
   })
@@ -698,7 +703,7 @@ export function bondSummary(
     groups,
     sources,
     minted: sources[0].net,
-    fromInventory: sources[1].net + sources[2].net + sources[3].net,
+    fromInventory: sources.slice(1).reduce((sum, source) => sum + source.net, 0),
     buyback,
     outcome,
     top10Share,
@@ -761,8 +766,8 @@ export function bondHeadline(summary: BondSummary): string {
   if (summary.epochsInWindow > 0) {
     parts.push(
       summary.allTime
-        ? `Bonds sold out in ${summary.soldOutCount} of ${summary.epochsInWindow} epochs since launch.`
-        : `Bonds sold out in ${summary.soldOutCount} of the last ${summary.epochsInWindow} epochs.`,
+        ? `Depository bonds sold out in ${summary.soldOutCount} of ${summary.epochsInWindow} epochs since launch.`
+        : `Depository bonds sold out in ${summary.soldOutCount} of the last ${summary.epochsInWindow} epochs.`,
     )
   }
   if (summary.totals.net <= 0) {
@@ -781,7 +786,7 @@ export function bondHeadline(summary: BondSummary): string {
   )
   const share = summary.cohorts[lead].share
   if (share <= 0) {
-    parts.push(`${summary.totals.wallets} wallets bought ${amount(summary.totals.net)} NET in bonds ${window}.`)
+    parts.push(`${capital(walletCount(summary.totals.wallets))} bought ${amount(summary.totals.net)} NET in bonds ${window}.`)
   } else if (lead === 'smart') {
     parts.push(`Smart money bought ${percent(share)} of bonded NET ${window}.`)
   } else {
@@ -870,7 +875,10 @@ const fixed = (value: number | null | undefined, dp: number) => (value === null 
 const isoTime = (t: number) => new Date(t * 1000).toISOString()
 const CSV_PARTS = [...PARTS, 'sold', 'moved'] as const
 
-/** The buyer list as CSV. Outcome columns are % of expected NET; DEX columns cover the window. */
+/**
+ * The buyer list as CSV. Outcome columns are % of expected NET, all time; `sold_pct` counts gross DEX
+ * sells and `net_sold_pct` sells minus buys. DEX columns with a window suffix cover the window.
+ */
 export function buyersCsv(rows: BondBuyer[], window: BondWindow): string {
   const header = [
     'address',
@@ -885,8 +893,11 @@ export function buyersCsv(rows: BondBuyer[], window: BondWindow): string {
     'group',
     `sources_${window}`,
     ...CSV_PARTS.map((part) => `${part}_pct`),
+    'net_sold_pct',
     `dex_sold_net_${window}`,
     `dex_sold_usd_${window}`,
+    `dex_bought_net_${window}`,
+    `dex_net_sold_net_${window}`,
   ]
   const lines = rows.map((row) =>
     [
@@ -907,8 +918,11 @@ export function buyersCsv(rows: BondBuyer[], window: BondWindow): string {
         const share = row.split?.[part] ?? null
         return fixed(share === null ? null : share * 100, 2)
       }),
+      fixed(row.netSold === null ? null : row.netSold * 100, 2),
       fixed(row.dexSold, 6),
       fixed(row.dexSoldUsd, 2),
+      fixed(row.dexBought, 6),
+      fixed(row.dexSold === null || row.dexBought === null ? null : Math.max(0, row.dexSold - row.dexBought), 6),
     ]
       .map(csvCell)
       .join(','),

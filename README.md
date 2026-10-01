@@ -34,7 +34,7 @@ Copy `.env.example` to `.env` if you want a different RPC or poll interval. Defa
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `VITE_RPC_URL` | `https://rpc.mainnet.chain.robinhood.com` | Oracle, treasury NAV, sNET index, Uniswap reserves, Morpho `market()` |
+| `VITE_RPC_URL` | `/api/rpc` | Oracle, treasury NAV, sNET index, Uniswap reserves, Morpho `market()`. The default is a same-origin proxy to the official RPC. Set a full URL to read another node from the browser. |
 | `VITE_MORPHO_GRAPHQL` | `https://api.morpho.org/graphql` | Borrower list, collateral outstanding, borrow/supply APY |
 | `VITE_POLL_SECONDS` | `45` | Refresh interval (15–300) |
 | `ZEROX_API_KEY` | unset | Optional 0x / Matcha key. Inlined into the bundle. See below. |
@@ -68,9 +68,28 @@ The 38.5% LLTV twin market is a footnote only. It is not in the ladder.
 7. **Pendle** — the sNET index priced forward. Every wsNET’s credited value is multiplied by `sNET.index()`, so index growth is the looper’s income and the borrow rate is the cost. The panel converts Pendle’s implied and trailing APY to a daily rate, measures on-chain index drift from the seed snapshot, and projects when the adaptive curve pushes the Loopback borrow rate past the implied index growth. Past that point the loop has negative carry.
 8. **Holders and flows** — Nansen on NET: holder count, 7-day DEX buy and sell volume, smart-money and public-figure net flow, the staking pool’s share, net buyers and sellers by label, and the smart-money tape. Loopback borrowers and large credit-vault borrowers are tagged. Nansen labels also show under ladder addresses.
 
-9. **Bond buyers** — who buys NetNet bonds, and what they did with the NET. The server reads four bond sources. The BondDepository (`BondCreated`) mints NET at bond time. The RWA bond desk v2 and the asset bond desk sell NET that was deposited first; most of it was minted in the deposit transaction. The v3 sleeve desk sells NET that the manager sleeve bought on the DEX, with no mint. Pick 24h, 7d, 14d, 30d, or all time. The chart shows bonded NET per 8-hour epoch, colored by buyer group or by source, with the depository cap (0.25% of NET supply) as a tick. A dashed red rule marks the v3 launch. The Price button adds the NET/USDG 4 h close on a right axis. Each wallet gets one buyer group from its all-time behavior: what it holds now (NET, sNET, wsNET, Loopback collateral, unvested bonds) and its Nansen DEX sells. The groups table shows wallets, bonded NET, average price, the sold and held shares, and realized PnL. The top buyers table shows Nansen labels, NetNet registry names, and tags, and downloads as CSV. A label does not prove who owns a wallet.
+9. **Bond buyers** — who buys NetNet bonds, and what they did with the NET. The server reads five bond sources. The BondDepository (`BondCreated`) mints NET at bond time. The RWA bond desk v1 (2026-07-24 to 2026-08-27), the RWA bond desk v2, and the asset bond desk sell NET that was deposited first; most of it was minted in the deposit transaction. The v3 sleeve desk sells NET that the manager sleeve bought on the DEX, with no mint. Pick 24h, 7d, 14d, 30d, or all time. The chart shows bonded NET per 8-hour epoch, colored by buyer group or by source, with the depository cap (0.25% of NET supply) as a tick. A dashed red rule marks the v3 launch. The Price button adds the NET/USDG 4 h close on a right axis. Each wallet gets one buyer group from its all-time behavior: what it holds now (NET, sNET, wsNET, Loopback collateral, unvested bonds) and its Nansen DEX sells. The groups table shows wallets, bonded NET, average price, the sold and held shares, and realized PnL. The top buyers table shows Nansen labels, NetNet registry names, and tags, and downloads as CSV. A label does not prove who owns a wallet.
+
+   The groups use gross Nansen DEX sells. A wallet that also buys NET on the DEX shows a higher sold share than its net selling. The CSV has both: `sold_pct` (gross) and `net_sold_pct` (sells minus buys, floored at 0), plus the window's DEX buys and net sells. Nansen lists DEX sellers only, so DEX buys are known only for wallets that sold in the window; the other cells are empty.
+
+   Two contracts paid NET outside the public bonds: the genesis bond `0x575b7B7c97Ef3E21C82DAeB427899d583e1E913f` (founding offering, about 21,667 NET to 35 wallets) and the OTC desk `0x70eaeEc20c39dF48509F1F3faB01f7dDe207947b` (about 2,250 NET to 3 wallets). They are not bond sources here, and their NET is not in the chart or the groups.
+
+   `/api/bonds` sends a weak `ETag`. The page sends it back in `If-None-Match`. When only the head block, the live bond price, or the progress changed, the server answers `304` and sends those fields in the `x-bonds-head` header, not the full feed.
 
 The Morpho vault and Pendle reads refresh every 5 minutes in the browser. Nansen runs on the server, one read per `NANSEN_TTL_MINUTES`, and only when someone opens the page.
+
+## Nansen credit budget
+
+Nansen reads run only while someone has the page open. The numbers below are the most a day can cost with the page open all day and the default TTLs. The server log prints the credits of each read (`x-nansen-credits-cost`).
+
+| Read | Interval | Calls per read | Reads a day | Credits a day |
+| --- | --- | --- | --- | --- |
+| Holder and flow snapshot (`nansen.mjs`) | `NANSEN_TTL_MINUTES`, 60 | 9 | 24 | about 216 at 1 credit a call |
+| Bond buyer labels (`tgm/transfers`) | `NANSEN_TTL_MINUTES`, 60 | 1 page (one to two days of payouts) | 24 | about 24 |
+| Bond buyer DEX sells (`tgm/who-bought-sold`, five windows) | `BONDS_DEX_TTL_MINUTES`, 180 | about 31 pages | 8 | about 248 |
+| **Total** | | | | **about 490 a day, about 14,700 in 30 days** |
+
+A server without a saved bond index reads labels from launch again, in 7-day ranges: about 11 more calls once. A failed read waits 5 minutes before it tries again. The per-call cost of the snapshot endpoints is an estimate; the log line gives the real number.
 
 ## Assumptions that move the print
 
@@ -123,14 +142,16 @@ Sizes quoted each refresh: 1, 5, 15, 40, 80, 150, 300, and 600 NET, plus the sce
 | `src/lib/rates.ts` | Adaptive-curve projection and daily-rate conversions. |
 | `src/lib/flows.ts` | Nansen label classes, net movers, smart-money tape, holder split. |
 | `nansen.mjs` | Server-side Nansen reads with a TTL cache. Used by `server.mjs` and the Vite dev server. |
+| `rpc.mjs` | Same-origin JSON-RPC proxy behind `/api/rpc`, to the official RPC only. It passes only the desk's own reads: `eth_blockNumber`, `eth_chainId`, the latest block header, and the `eth_call`s in `src/adapters/rpc.ts` at `latest`. 32 calls and 16 KB per request, 10 s timeout, 6 requests per client and then one every 5 s. Identical batches share one upstream read for 3 s. Add a new desk read to `CALLS` in `rpc.mjs` too; a test checks the two lists. |
 | `bonds.mjs` | Server-side bond index behind `/api/bonds`: BondDepository and bond desk logs, desk stock, NET supply, sNET index, the manager sleeve's NET flows, NET/USDG candles (GeckoTerminal), holdings, Nansen labels, DEX sells. |
+| `src/adapters/bonds.ts` | Reads `/api/bonds` with `If-None-Match` and merges a `304` head into the feed it holds. |
 | `src/lib/bonds.ts` | Bond buyer groups (behavior and Nansen cohorts), sources, the per-epoch series, top buyers, the summary, and the plain-language lines. |
 | `src/lib/protocol.ts` | NetNet's own contract registry (address → name). These names win over Nansen labels. |
 | `src/lib/model.ts` | Ladder rows and scenario buckets. |
 | `src/seed/stressDesk.ts` | 18:02 Warsaw snapshot used for first paint. |
 | `seed/` | The stress note and JSON that snapshot was taken from. |
 | `src/mock/sampleDesk.ts` | Frozen illustration kept for tests. |
-| `server.mjs` | Production server. Reads `PORT`, serves `dist/`, SPA fallback, `/health`, `/api/nansen`, `/api/bonds`. |
+| `server.mjs` | Production server. Reads `PORT`, serves `dist/`, SPA fallback, `/health`, `/api/nansen`, `/api/bonds`, `/api/rpc`. |
 | `railway.toml` | Nixpacks build, start command, healthcheck. |
 | `nixpacks.toml` | Installs devDependencies so `vite` and `tsc` exist when `NODE_ENV=production`. |
 
@@ -142,7 +163,7 @@ The public defaults work with no secrets: Robinhood Chain RPC, Morpho GraphQL, a
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `VITE_RPC_URL` | no | Public Robinhood RPC if unset |
+| `VITE_RPC_URL` | no | `/api/rpc` (the server's proxy to the public Robinhood RPC) if unset |
 | `VITE_MORPHO_GRAPHQL` | no | `https://api.morpho.org/graphql` if unset |
 | `VITE_POLL_SECONDS` | no | `45` if unset |
 | `ZEROX_API_KEY` or `VITE_ZEROX_API_KEY` | no | Referrer-restricted 0x key. Inlined into the JS. Do not commit it. |

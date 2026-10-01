@@ -42,9 +42,10 @@ export type ChainRead = {
   errors: string[]
 }
 
-export async function readChain(signal?: AbortSignal): Promise<ChainRead> {
+/** The desk's chain reads, one batch. rpc.mjs lets exactly these through /api/rpc. */
+export function chainCalls(): Array<{ method: string; params: unknown[] }> {
   const marketData = `${SELECTORS.market}${ADDRESSES.marketId.slice(2)}`
-  const calls: Array<{ method: string; params: unknown[] }> = [
+  return [
     { method: 'eth_blockNumber', params: [] },
     { method: 'eth_getBlockByNumber', params: ['latest', false] },
     { method: 'eth_call', params: [{ to: ADDRESSES.oracle, data: SELECTORS.price }, 'latest'] },
@@ -59,8 +60,10 @@ export async function readChain(signal?: AbortSignal): Promise<ChainRead> {
     { method: 'eth_call', params: [{ to: ADDRESSES.pairOracle, data: SELECTORS.maxWindow }, 'latest'] },
     { method: 'eth_call', params: [{ to: ADDRESSES.morpho, data: marketData }, 'latest'] },
   ]
+}
 
-  const responses = await rpcBatch(calls, signal)
+export async function readChain(signal?: AbortSignal): Promise<ChainRead> {
+  const responses = await rpcBatch(chainCalls(), signal)
   const errors: string[] = []
 
   const blockHex = asHex(responses[0], 'block', errors)

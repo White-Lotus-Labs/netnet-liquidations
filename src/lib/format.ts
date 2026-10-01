@@ -70,9 +70,18 @@ export function formatApy(apy: number | null): string {
   return `${(apy * 100).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
 }
 
+const numberFormats = new Map<number, Intl.NumberFormat>()
+
+/** en-US with a fixed number of decimals. Cached: a new Intl.NumberFormat per call is slow in long tables. */
+export function decimals(digits: number): Intl.NumberFormat {
+  let format = numberFormats.get(digits)
+  if (!format) numberFormats.set(digits, (format = new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })))
+  return format
+}
+
 export function formatRatio(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—'
-  return `${(value * 100).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+  return `${decimals(1).format(value * 100)}%`
 }
 
 export function shortAddress(address: string): string {

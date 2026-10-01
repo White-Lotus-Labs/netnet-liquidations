@@ -203,7 +203,8 @@ const ICON_ACTION =
   'inline-grid size-[26px] flex-none cursor-pointer place-items-center rounded-[5px] border border-transparent text-muted transition-colors duration-[160ms] ease-lift hover:border-line hover:bg-[rgb(255_250_238/0.7)] hover:text-brocade'
 
 /** Wallet cell: short address, label (NetNet's registry name wins over Nansen's), tags, copy, and a Nansen profiler link. */
-export function Who(props: { address: string; label?: string | null; tags?: string[] }) {
+/** `stacked` keeps one row height in long tables: name and actions on one line, tags on a second line that never wraps. */
+export function Who(props: { address: string; label?: string | null; tags?: string[]; stacked?: boolean }) {
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
   const protocol = protocolLabel(props.address)
   const name = protocol ?? cleanLabel(props.label)
@@ -219,13 +220,18 @@ export function Who(props: { address: string; label?: string | null; tags?: stri
       () => flash('failed'),
     )
   }
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="font-mono text-xs text-muted" title={props.address}>
+  const tags = props.tags?.map((tag) => (
+    <Chip key={tag} tone={tag.startsWith('Sold') ? 'sell' : 'neutral'}>
+      {tag}
+    </Chip>
+  ))
+  const main = (
+    <div className={cx('flex min-w-0 items-center gap-x-2 gap-y-1', props.stacked ? 'flex-nowrap' : 'flex-wrap')}>
+      <span className="flex-none font-mono text-xs text-muted" title={props.address}>
         {props.address.slice(0, 6)}…{props.address.slice(-4)}
       </span>
       {name ? (
-        <span title={name} className={cx('max-w-[16rem] truncate rounded-full border bg-[rgb(255_250_238/0.7)] px-2 py-px text-[11.5px] font-semibold', tone)}>
+        <span title={name} className={cx(props.stacked ? 'min-w-0 max-w-[13rem]' : 'max-w-[16rem]', 'truncate rounded-full border bg-[rgb(255_250_238/0.7)] px-2 py-px text-[11.5px] font-semibold', tone)}>
           {name}
         </span>
       ) : null}
@@ -234,11 +240,7 @@ export function Who(props: { address: string; label?: string | null; tags?: stri
           Protocol
         </Chip>
       ) : null}
-      {props.tags?.map((tag) => (
-        <Chip key={tag} tone={tag.startsWith('Sold') ? 'sell' : 'neutral'}>
-          {tag}
-        </Chip>
-      ))}
+      {props.stacked ? null : tags}
       <span className="relative inline-flex">
         <button type="button" className={ICON_ACTION} aria-label="Copy address" title="Copy address" onClick={onCopy}>
           <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.3]">
@@ -268,6 +270,17 @@ export function Who(props: { address: string; label?: string | null; tags?: stri
           <path d="M9 2.5h4.5V7M13.5 2.5 7 9M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" />
         </svg>
       </a>
+    </div>
+  )
+  if (!props.stacked) return main
+  // The tag line is always there, so rows without tags keep the same height.
+  // Wide enough for three tags; the table scrolls inside its own box.
+  return (
+    <div className="min-w-[24rem]">
+      {main}
+      <div className="mt-0.5 flex h-[18px] min-w-0 flex-nowrap items-center gap-x-1.5 overflow-hidden" title={props.tags?.join(' · ') || undefined}>
+        {tags}
+      </div>
     </div>
   )
 }
