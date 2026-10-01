@@ -113,8 +113,9 @@ describe('bond windows', () => {
 describe('bond cohorts', () => {
   it('maps Nansen labels and tells a missing read from an address-only label', () => {
     expect(['0xa', '0xB', '0xc', '0x1', '0xd'].map(cohortOf)).toEqual(['smart', 'public', 'hl', 'labelled', 'unlabelled'])
-    expect(cohortOf('0xe')).toBe('unlabelled') // no label, first bond before the read-through day
-    expect(cohortOf('0xf')).toBe('unread') // no label, first bond after it
+    // No Nansen row: 0xe bonded before the read-through day but never claimed (all of it still vests), so Nansen never saw it.
+    expect(cohortOf('0xe')).toBe('unread')
+    expect(cohortOf('0xf')).toBe('unread') // no label, first bond after the read-through day
     expect(bondCohort('0xa', { ...feed, labels: {}, labelsReadThrough: null })).toBe('unread')
     expect(bondCohort('0xE', feed, new Map([['0xe', '🤓 Fund X']]))).toBe('smart')
   })
@@ -127,7 +128,7 @@ describe('epoch series', () => {
     expect(series[0]).toMatchObject({ epoch: 0, cap: 10, soldOut: true, soldOutAfter: 3600, fill: 1, wallets: 4, newWallets: 4 })
     expect(series[0].sold).toBeCloseTo(10.02)
     expect(series[0].firstMinuteShare).toBeCloseTo(6 / 10.02)
-    expect(series[0].byCohort).toMatchObject({ smart: 4, public: 2, hl: 4, unlabelled: 0.02 })
+    expect(series[0].byCohort).toMatchObject({ smart: 4, public: 2, hl: 4, unread: 0.02 })
   })
 
   it('puts t = startTime + epoch length in the next epoch and skips market 1 in USDG', () => {
@@ -290,7 +291,7 @@ describe('bond summary', () => {
     expect(summary.totals.usdg).toBeCloseTo(1902.1)
     expect(summary.top10Share).toBeCloseTo(18 / 18.52)
     expect(summary.cohorts.smart).toMatchObject({ wallets: 1, net: 5, avgPrice: 102 })
-    expect(summary.cohorts.unread.net).toBeCloseTo(5.5)
+    expect(summary.cohorts.unread.net).toBeCloseTo(5.52)
     expect(summary.loopbackOverlap).toEqual({ wallets: 1, net: 4 })
   })
 

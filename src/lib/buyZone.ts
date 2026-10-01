@@ -1,14 +1,17 @@
 import type { Desk } from '../types.ts'
 import { formatDays, formatUsdg, formatWad, wadToNumber } from './format.ts'
+import type { GlossaryId } from './glossary.ts'
 import type { ScenarioModel } from './model.ts'
 import { buildImpactView, routerMultiple, type ImpactView, type QuoteBook } from './quoteBook.ts'
 
 export type BuyCopy = {
   headline: string
   detail: string
-  caveats: string[]
+  caveats: Caveat[]
   alert: string | null
 }
+/** One caveat line and the glossary entries that explain it. */
+export type Caveat = { text: string; term: GlossaryId[] }
 
 function price(wad: bigint | null): string {
   return formatWad(wad, 2)
@@ -77,17 +80,20 @@ function saleDetail(model: ScenarioModel, impact: ImpactView): string {
   return `${canonical}${reconverged}`.trim()
 }
 
-function notes(args: { model: ScenarioModel; facilityMultiple: number | null; runwayDays: number | null }): string[] {
+function notes(args: { model: ScenarioModel; facilityMultiple: number | null; runwayDays: number | null }): Caveat[] {
   const { model, facilityMultiple, runwayDays } = args
-  const out = ['No forced sale while spot sits more than 15% under TWAP.', '0.30% pair fee included; 5% Treasury fee excluded.']
+  const out: Caveat[] = [
+    { text: 'No forced sale while spot sits more than 15% under TWAP.', term: ['liquidationsPaused'] },
+    { text: '0.30% pair fee included; 5% Treasury fee excluded.', term: ['treasuryFee'] },
+  ]
   const high = model.triggerHighWad
   if (high !== null && model.triggerLowWad !== null && high > 0n) {
     const spread = Number(((high - model.triggerLowWad) * 10_000n) / high) / 100
-    if (spread > 8) out.push(`Triggers span ${spread.toFixed(0)}%: expect a staircase of prints, not one clip.`)
+    if (spread > 8) out.push({ text: `Triggers span ${spread.toFixed(0)}%: expect a staircase of prints, not one clip.`, term: ['triggerSpan'] })
   }
-  if (facilityMultiple !== null && facilityMultiple > 1) out.push('Book borrow exceeds the 10% pool guide: expect tranches, not one dump.')
-  if (runwayDays !== null && runwayDays < 45) out.push(`At flat credit, interest alone liquidates the weakest names in ${formatDays(runwayDays)}.`)
-  if (model.badDebtRaw > 0n) out.push(`${formatUsdg(model.badDebtRaw, 0)} USDG of this bucket is bad debt at the incentive.`)
+  if (facilityMultiple !== null && facilityMultiple > 1) out.push({ text: 'Book borrow exceeds the 10% pool guide: expect tranches, not one dump.', term: ['poolGuide'] })
+  if (runwayDays !== null && runwayDays < 45) out.push({ text: `At flat credit, interest alone liquidates the weakest names in ${formatDays(runwayDays)}.`, term: ['runway'] })
+  if (model.badDebtRaw > 0n) out.push({ text: `${formatUsdg(model.badDebtRaw, 0)} USDG of this bucket is bad debt at the incentive.`, term: ['badDebt', 'incentive'] })
   return out
 }
 

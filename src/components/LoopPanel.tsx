@@ -2,11 +2,12 @@ import { ADDRESSES } from '../config.ts'
 import type { CreditBook } from '../adapters/credit.ts'
 import type { PendleBook } from '../adapters/pendle.ts'
 import { cx, formatApy, formatClock, formatDaily, formatDays, formatMultiple, formatRatio, formatUsd, formatUsdg } from '../lib/format.ts'
+import type { GlossaryId } from '../lib/glossary.ts'
 import { facilityStats } from '../lib/model.ts'
 import { TARGET_UTILIZATION, apyToApr, dailyFromApy, daysUntilBorrowApr, projectedBorrowApy } from '../lib/rates.ts'
 import type { Desk } from '../types.ts'
 import { Sparkline } from './Sparkline.tsx'
-import { Details, Fresh, Kpi, KpiRow, Section } from './ui.tsx'
+import { Details, Fresh, Hint, Kpi, KpiRow, Section } from './ui.tsx'
 
 /** Loop stress: is the wsNET → USDG loop getting squeezed? */
 export function LoopPanel({
@@ -69,6 +70,7 @@ export function LoopPanel({
         <Kpi
           lead
           label="Looper carry"
+          term="looperCarry"
           value={formatDaily(carry)}
           tone={carry === null ? undefined : carry >= 0 ? 'up' : 'down'}
           hint={
@@ -76,23 +78,35 @@ export function LoopPanel({
               ? 'Negative carry: expect repayments and wsNET unwinds.'
               : pendleError && !pendle
                 ? 'Pendle data is offline.'
-                : 'Index minus borrow, per day, in NET terms'
+                : (
+                    <>
+                      <Hint id="sNetIndex">Index</Hint> minus borrow, per day, in NET terms
+                    </>
+                  )
           }
         />
         <Kpi
           label="Borrow"
+          term="borrowRate"
           value={formatDaily(borrow, 3)}
           hint={`${formatApy(borrowApy)} APY${in7d === null ? '' : ` · ${formatDaily(in7d, 3)} in 7d if utilization holds`}`}
         />
         {crossDays !== null && crossDays <= 30 ? (
           <Kpi
             label="Borrow passes index"
+            term="borrowPassesIndex"
             value={crossDays === 0 ? 'Now' : `in ${formatDays(crossDays)}`}
             hint="Pendle implied index, if utilization holds"
             tone={crossDays < 14 ? 'warn' : undefined}
           />
         ) : null}
-        <Kpi label="Utilization" value={formatRatio(utilization)} hint="Curve target 90%" tone={utilization !== null && utilization > 0.98 ? 'warn' : undefined} />
+        <Kpi
+          label="Utilization"
+          term="utilization"
+          value={formatRatio(utilization)}
+          hint={<Hint id="adaptiveCurve">Curve target 90%</Hint>}
+          tone={utilization !== null && utilization > 0.98 ? 'warn' : undefined}
+        />
         <Kpi
           label="Loopback supply · 7d"
           value={supply ? `${supply.change >= 0 ? '+' : ''}${formatRatio(supply.change)}` : '—'}
@@ -101,6 +115,7 @@ export function LoopPanel({
         />
         <Kpi
           label="Borrowed vs pool guide"
+          term="borrowedVsGuide"
           value={formatMultiple(multiple)}
           tone={multiple !== null && multiple > 1 ? 'warn' : undefined}
           hint={`${formatUsdg(desk.borrowRaw, 0)} USDG borrowed; guide is 10% of pool USDG`}
@@ -110,8 +125,9 @@ export function LoopPanel({
       {flags.length > 0 ? (
         <ul className="mt-3 space-y-1.5">
           {flags.map((flag) => (
-            <li key={flag} className="border-l-2 border-seal pl-2 text-sm text-seal">
-              {flag}
+            <li key={flag.text} className="border-l-2 border-seal pl-2 text-sm text-seal">
+              {flag.text}
+              <Hint id={flag.term} />
             </li>
           ))}
         </ul>
@@ -129,7 +145,7 @@ export function LoopPanel({
         />
         <p className="num mt-1 flex flex-wrap items-center gap-x-4 text-xs text-muted">
           <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-3 bg-ink" />Loopback borrow</span>
-          <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 border-t-2 border-dashed border-lotus" />Pendle implied index <span className="text-lotus">{formatDaily(implied, 3)}</span></span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 border-t-2 border-dashed border-lotus" /><Hint id="impliedIndex">Pendle implied index</Hint> <span className="text-lotus">{formatDaily(implied, 3)}</span></span>
         </p>
       </div>
 
@@ -154,7 +170,9 @@ function VaultDetail({ credit }: { credit: CreditBook }) {
           <thead className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
             <tr className="border-b border-line">
               <th className="py-1.5 font-semibold">Market</th>
-              <th className="py-1.5 text-right font-semibold">Vault in / cap</th>
+              <th className="py-1.5 text-right font-semibold">
+                <Hint id="vaultInCap">Vault in / cap</Hint>
+              </th>
               <th className="py-1.5 text-right font-semibold">Supply</th>
               <th className="py-1.5 text-right font-semibold">Free</th>
               <th className="py-1.5 text-right font-semibold">Util</th>
@@ -169,7 +187,10 @@ function VaultDetail({ credit }: { credit: CreditBook }) {
                 title={market.supplyUsdg < 1_000 ? 'Under $1k supplied. Rates here are noise.' : undefined}
               >
                 <td className="py-1.5 font-sans text-ink">
-                  {market.collateral} <span className="text-[11px] text-muted">{formatRatio(market.lltv)} LLTV</span>
+                  {market.collateral}{' '}
+                  <span className="text-[11px] text-muted">
+                    {formatRatio(market.lltv)} <Hint id="lltv">LLTV</Hint>
+                  </span>
                 </td>
                 <td className="py-1.5 text-right">
                   {formatUsd(market.allocatedUsdg, true)} <span className="text-muted">/ {formatUsd(market.capUsdg, true)}</span>
@@ -188,11 +209,12 @@ function VaultDetail({ credit }: { credit: CreditBook }) {
           <Kpi label="Vault assets" value={formatUsd(vault.totalAssetsUsdg, true)} hint={`${vault.depositors.toLocaleString('en-US')} depositors`} />
           <Kpi
             label="Withdrawable now"
+            term="exitLiquidity"
             value={formatUsd(vault.liquidityUsdg, true)}
             hint={vault.totalAssetsUsdg > 0 ? `${formatRatio(vault.liquidityUsdg / vault.totalAssetsUsdg)} of assets` : undefined}
           />
           <Kpi label="Top 2 depositors" value={vault.totalAssetsUsdg > 0 ? formatRatio(topTwo / vault.totalAssetsUsdg) : '—'} hint="Share of vault assets" />
-          <Kpi label="Largest borrower" value={topExposure ? formatRatio(topExposure.share) : '—'} hint={topExposure ? topExposure.markets.join(', ') : undefined} />
+          <Kpi label="Largest borrower" term="largestBorrower" value={topExposure ? formatRatio(topExposure.share) : '—'} hint={topExposure ? topExposure.markets.join(', ') : undefined} />
         </KpiRow>
       </div>
     </>
@@ -213,8 +235,8 @@ function PendleDetail({ pendle }: { pendle: PendleBook }) {
       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Pendle sNET · yields in NET, not USD</p>
       <div className="mt-1">
         <KpiRow>
-          <Kpi label="Active maturity" value={active ? day(active.expiry) : '—'} hint={active ? `${formatDays((active.expiry - now) / 86_400_000)} left` : 'No sNET maturity trades now.'} />
-          <Kpi label="Trailing index" value={formatDaily(active ? dailyFromApy(active.underlyingApy) : null, 3)} hint="Pendle recent average" />
+          <Kpi label="Active maturity" term="activeMaturity" value={active ? day(active.expiry) : '—'} hint={active ? `${formatDays((active.expiry - now) / 86_400_000)} left` : 'No sNET maturity trades now.'} />
+          <Kpi label="Trailing index" term="trailingIndex" value={formatDaily(active ? dailyFromApy(active.underlyingApy) : null, 3)} hint="Pendle recent average" />
           <Kpi
             label="Market TVL"
             value={formatUsd(active?.tvlUsd ?? null, true)}
@@ -251,19 +273,20 @@ function supplyChange(credit: CreditBook | null): { now: number; change: number 
   return { now: last.supplyUsdg, change: last.supplyUsdg / weekAgo.supplyUsdg - 1 }
 }
 
-/** Only the flags that fire now. */
-function creditFlags(credit: CreditBook): string[] {
+/** Only the flags that fire now, each with the glossary entry that explains it. */
+function creditFlags(credit: CreditBook): Array<{ text: string; term: GlossaryId }> {
   const { vault } = credit
-  const flags: string[] = []
+  const flags: Array<{ text: string; term: GlossaryId }> = []
   if (vault.totalAssetsUsdg > 0 && vault.liquidityUsdg / vault.totalAssetsUsdg < 0.05) {
-    flags.push(`Only ${formatUsd(vault.liquidityUsdg, true)} of ${formatUsd(vault.totalAssetsUsdg, true)} can leave the credit vault now.`)
+    flags.push({ text: `Only ${formatUsd(vault.liquidityUsdg, true)} of ${formatUsd(vault.totalAssetsUsdg, true)} can leave the credit vault now.`, term: 'exitLiquidity' })
   }
   const funded = credit.markets.filter((market) => market.supplyUsdg > 1_000)
   const pinned = funded.filter((market) => market.utilization > 0.98)
   if (pinned.length > 0) {
-    flags.push(`${pinned.length} of ${funded.length} funded vault markets sit above 98% utilization. No idle vault USDG can cool Loopback rates.`)
+    const all = pinned.length === funded.length ? ' No idle vault USDG can cool Loopback rates.' : ''
+    flags.push({ text: `${pinned.length} of ${funded.length} funded vault markets sit above 98% utilization.${all}`, term: 'pinnedMarkets' })
   }
   const badDebt = credit.markets.reduce((sum, market) => sum + market.badDebtUsdg, 0)
-  if (badDebt > 0) flags.push(`Bad debt on record: ${formatUsd(badDebt)}.`)
+  if (badDebt > 0) flags.push({ text: `Bad debt on record: ${formatUsd(badDebt)}.`, term: 'badDebt' })
   return flags
 }

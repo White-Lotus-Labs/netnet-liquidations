@@ -70,13 +70,12 @@ export function checkBody(text) {
   return { calls: parsed }
 }
 
-/** The client address Railway's proxy appends last, else the socket peer. */
-function clientOf(req) {
-  const forwarded = String(req.headers['x-forwarded-for'] ?? '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-  return forwarded.at(-1) ?? req.socket?.remoteAddress ?? 'unknown'
+/**
+ * The bucket key. Railway's edge sets X-Real-IP to the connecting address. The last X-Forwarded-For hop can
+ * be Railway's own proxy, which would put every viewer in one bucket. Elsewhere (Vite dev) the socket peer.
+ */
+export function clientOf(req) {
+  return String(req.headers['x-real-ip'] ?? '').trim() || req.socket?.remoteAddress || 'unknown'
 }
 
 /** Token bucket per client. True when the request may pass. */

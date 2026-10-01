@@ -119,6 +119,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Glossary slips fade in; motion-safe only. */
+@keyframes slip-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @layer components {
   .eyebrow {
     margin: 0;

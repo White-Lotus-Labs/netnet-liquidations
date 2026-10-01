@@ -1,9 +1,11 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import type { EpochRow } from '../lib/bonds.ts'
 import { cx } from '../lib/format.ts'
+import type { GlossaryId } from '../lib/glossary.ts'
+import { Hint } from './ui.tsx'
 
-/** One stacked layer: a buyer group or a bond source. `paint` is a CSS color, or 'hatch'. */
-export type Layer = { key: string; name: string; paint: string; value: (row: EpochRow) => number }
+/** One stacked layer: a buyer group or a bond source. `paint` is a CSS color, or 'hatch'; `term` explains it in the legend. */
+export type Layer = { key: string; name: string; term?: GlossaryId; paint: string; value: (row: EpochRow) => number }
 /** A vertical rule at the left edge of an epoch. 'seal' is the v3 launch; 'muted' marks a desk's first bond. `short` is for narrow plots. */
 export type Marker = { epoch: number; label: string; short?: string; tone: 'seal' | 'muted' }
 
@@ -300,15 +302,15 @@ export function BondChart(props: {
         ) : null}
       </div>
       {line ? (
-        <p aria-hidden="true" className="mt-1.5 flex flex-wrap justify-end gap-x-3 gap-y-1 text-[11px] text-muted">
+        <p className="mt-1.5 flex flex-wrap justify-end gap-x-3 gap-y-1 text-[11px] text-muted">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-[1.5px] w-4 bg-ink" />
+            <span aria-hidden="true" className="h-[1.5px] w-4 bg-ink" />
             NET price, 4 h close
           </span>
           {line.fills.length > 0 ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-[7px] rounded-full border border-ink bg-paper" />
-              Bond fill price
+              <span aria-hidden="true" className="size-[7px] rounded-full border border-ink bg-paper" />
+              <Hint id="fillPrice">Bond fill price</Hint>
             </span>
           ) : null}
         </p>

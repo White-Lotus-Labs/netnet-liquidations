@@ -4,6 +4,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 export function checkCall(call: unknown): string | null
 /** Parses and checks a request body. */
 export function checkBody(text: string): { calls: unknown; error?: undefined } | { error: string; calls?: undefined }
+/** The rate-limit key: X-Real-IP (set by Railway's edge), else the socket peer. */
+export function clientOf(req: Pick<IncomingMessage, 'headers' | 'socket'>): string
 /** Token bucket per client. True when the request may pass. */
 export function allow(client: string, now?: number): boolean
 export function handleRpc(req: IncomingMessage, res: ServerResponse): Promise<void>

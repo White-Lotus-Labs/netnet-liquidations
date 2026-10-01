@@ -13,6 +13,7 @@ import { LoopPanel } from './components/LoopPanel.tsx'
 import { MusicToggle } from './components/MusicToggle.tsx'
 import { OracleStrip } from './components/OracleStrip.tsx'
 import { Petals } from './components/Petals.tsx'
+import { Hint } from './components/ui.tsx'
 import { describeBuyZone } from './lib/buyZone.ts'
 import { labelMap, type NansenSnapshot } from './lib/flows.ts'
 import { cx, formatAge, formatWarsaw, parseUsdgInput, shortAddress } from './lib/format.ts'
@@ -188,7 +189,7 @@ export default function App() {
               data-testid="mode-badge"
             >
               <span aria-hidden="true" className={cx('size-[7px] rounded-full', badge.dot)} />
-              {badge.label}
+              <Hint id="modeBadge">{badge.label}</Hint>
             </span>
             <span className="num text-[rgb(243_234_217/0.75)]" title={formatWarsaw(desk.fetchedAt)}>
               {desk.blockNumber ? `Block ${desk.blockNumber.toLocaleString('en-US')}` : 'Block unavailable'}

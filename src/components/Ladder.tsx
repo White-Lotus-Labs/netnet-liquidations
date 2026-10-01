@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cx, formatHealth, formatNet, formatPercentWad, formatUsdg, formatWad } from '../lib/format.ts'
 import type { EnrichedPosition } from '../lib/model.ts'
 import { WAD } from '../lib/units.ts'
-import { Section, Who } from './ui.tsx'
+import { Hint, Section, Who } from './ui.tsx'
 
 const NEAR = WAD / 5n // within 20% of the liquidation line
 const DUST = 1_000_000n // under 1 USDG of debt
@@ -40,9 +40,16 @@ export function Ladder({
       title="Next to"
       accent="liquidate"
       answer={
-        near.length === 0
-          ? 'No borrower sits within 20% of liquidation.'
-          : `${near.length} borrower${near.length === 1 ? '' : 's'} sit within 20% of liquidation. They owe ${formatUsdg(nearDebt, 0)} USDG and would send ${formatNet(nearNet, 2)} NET to market.`
+        near.length === 0 ? (
+          <>
+            No borrower sits <Hint id="nearLiquidation">within 20% of liquidation</Hint>.
+          </>
+        ) : (
+          <>
+            {near.length} borrower{near.length === 1 ? '' : 's'} sit <Hint id="nearLiquidation">within 20% of liquidation</Hint>. They owe{' '}
+            {formatUsdg(nearDebt, 0)} USDG and would send {formatNet(nearNet, 2)} NET to market.
+          </>
+        )
       }
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted">
@@ -65,10 +72,13 @@ export function Ladder({
               className="w-44 rounded border border-[rgb(74_47_29/0.3)] bg-field px-2 py-1 text-sm text-ink outline-none placeholder:text-muted"
             />
             {rows.length > real.length ? (
-              <label className="inline-flex items-center gap-1.5">
-                <input type="checkbox" checked={dust} onChange={(event) => setDust(event.target.checked)} className="accent-accent" />
-                Include dust ({rows.length - real.length})
-              </label>
+              <span className="inline-flex items-center">
+                <label className="inline-flex items-center gap-1.5">
+                  <input type="checkbox" checked={dust} onChange={(event) => setDust(event.target.checked)} className="accent-accent" />
+                  Include dust ({rows.length - real.length})
+                </label>
+                <Hint id="dust" />
+              </span>
             ) : null}
           </>
         ) : null}
@@ -79,9 +89,15 @@ export function Ladder({
             <tr className="border-b border-line">
               <th className="px-2.5 pb-1.5 font-semibold">Who</th>
               <th className="px-2.5 pb-1.5 text-right font-semibold">Debt USDG</th>
-              <th className="px-2.5 pb-1.5 text-right font-semibold">NET to market</th>
-              <th className="px-2.5 pb-1.5 text-right font-semibold">Price to liq</th>
-              <th className="px-2.5 pb-1.5 text-right font-semibold">Health</th>
+              <th className="px-2.5 pb-1.5 text-right font-semibold">
+                <Hint id="netToMarket">NET to market</Hint>
+              </th>
+              <th className="px-2.5 pb-1.5 text-right font-semibold">
+                <Hint id="priceToLiq">Price to liq</Hint>
+              </th>
+              <th className="px-2.5 pb-1.5 text-right font-semibold">
+                <Hint id="health">Health</Hint>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -109,8 +125,8 @@ export function Ladder({
                     <td className={cx('num px-2.5 py-1.5 text-right', healthClass(row.healthWad))}>
                       {formatHealth(row.healthWad)}
                       {row.healthSource === 'indexed' ? (
-                        <span className="ml-1 text-[10px] text-muted" title="Morpho index health; the oracle price is missing">
-                          idx
+                        <span className="ml-1 text-[10px] text-muted">
+                          <Hint id="healthIndexed">idx</Hint>
                         </span>
                       ) : null}
                     </td>

@@ -71,7 +71,7 @@ export const COHORT_LABEL: Record<BondCohort, string> = {
 /** An epoch counts as sold out at 99.5% of its cap: bond mints raise supply, and the cap with it, inside the epoch. */
 const SOLD_OUT = 0.995
 
-type Derived = { ids: Map<string, number>; firstAt: number[]; readThrough: number; hasLabels: boolean }
+type Derived = { ids: Map<string, number>; firstAt: number[] }
 const derivedCache = new WeakMap<BondFeed, Derived>()
 
 function derived(feed: BondFeed): Derived {
@@ -84,8 +84,6 @@ function derived(feed: BondFeed): Derived {
     value = {
       ids: new Map(feed.wallets.map((address, i) => [address, i])),
       firstAt,
-      readThrough: feed.labelsReadThrough ? Date.parse(feed.labelsReadThrough) / 1000 : -Infinity,
-      hasLabels: Object.keys(feed.labels).length > 0,
     }
     derivedCache.set(feed, value)
   }
@@ -130,13 +128,9 @@ function labelOf(address: string, feed: BondFeed, extraLabels?: Map<string, stri
 export function bondCohort(address: string, feed: BondFeed, extraLabels?: Map<string, string>): BondCohort {
   const key = address.toLowerCase()
   const label = labelOf(key, feed, extraLabels)
-  if (label === null) {
-    // No row from Nansen. It is only "unlabelled" if Nansen had the chance to see this wallet redeem.
-    const { ids, firstAt, readThrough, hasLabels } = derived(feed)
-    const id = ids.get(key)
-    const first = id === undefined ? Infinity : firstAt[id]
-    return !hasLabels || first > readThrough ? 'unread' : 'unlabelled'
-  }
+  // No row from Nansen. Labels come from bond payouts and DEX sells, so a wallet that never claimed or sold
+  // has none, whatever its bond date. Nansen says "unlabelled" with an address-only label.
+  if (label === null) return 'unread'
   switch (labelClass(label)) {
     case null:
       return 'unlabelled'

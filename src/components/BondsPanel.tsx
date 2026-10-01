@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   COHORT_LABEL,
   GROUP_INFO,
@@ -26,8 +26,9 @@ import {
   type EpochRow,
 } from '../lib/bonds.ts'
 import { cx, decimals, formatClock, formatCount, formatRatio, formatSignedUsd, formatUsd } from '../lib/format.ts'
+import type { GlossaryId } from '../lib/glossary.ts'
 import { BondChart, type Layer, type Marker } from './BondChart.tsx'
-import { Details, Fresh, Kpi, KpiRow, Progress, Section, Segmented, Who } from './ui.tsx'
+import { Details, Fresh, Hint, Kpi, KpiRow, Progress, Section, Segmented, Who } from './ui.tsx'
 
 const WINDOWS: ReadonlyArray<{ value: BondWindow; label: string }> = [
   { value: '24h', label: '24h' },
@@ -63,18 +64,41 @@ const GROUP_PAINT: Record<BondGroup, string> = {
 const SOURCE_PAINT: Record<BondSource, string> = { 0: 'var(--color-lotus)', 1: 'var(--color-gold-ink)', 2: 'var(--color-gold)', 3: 'var(--color-jade)', 4: 'rgb(61 37 21 / 0.4)' }
 // Short enough for the tooltip. The depository mints at bond time; v3 sells NET the manager sleeve bought back.
 const SOURCE_NAME: Record<BondSource, string> = { 0: 'Depository · minted', 1: SOURCE_LABEL[1], 2: SOURCE_LABEL[2], 3: 'v3 desk · buybacks', 4: SOURCE_LABEL[4] }
+const SOURCE_TERM: Record<BondSource, GlossaryId> = { 0: 'depository', 1: 'bondDesks', 2: 'bondDesks', 3: 'v3Desk', 4: 'bondDesks' }
+const GROUP_TERM: Record<BondGroup, GlossaryId> = {
+  protocol: 'groupProtocol',
+  new: 'groupNew',
+  arbitrageur: 'groupArbitrageur',
+  weak: 'groupWeak',
+  mercenary: 'groupMercenary',
+  mover: 'groupMover',
+  left: 'groupLeft',
+  looper: 'groupLooper',
+  strong: 'groupStrong',
+  trimmer: 'groupTrimmer',
+  mixed: 'groupMixed',
+  unknown: 'groupUnknown',
+}
+const COHORT_TERM: Record<BondCohort, GlossaryId> = {
+  smart: 'smartMoney',
+  public: 'cohortPublic',
+  hl: 'cohortHl',
+  labelled: 'cohortLabelled',
+  unlabelled: 'cohortUnlabelled',
+  unread: 'cohortUnread',
+}
 
 // What the window's buyers did with the NET. Same paints as the groups they feed; "Sold on DEX" is a direction, so seal.
-const OUTCOME: ReadonlyArray<{ key: keyof BondOutcome; name: string; paint: string }> = [
-  { key: 'vesting', name: 'Vesting', paint: GROUP_PAINT.new },
-  { key: 'staked', name: 'Staked', paint: GROUP_PAINT.strong },
-  { key: 'wrapped', name: 'Wrapped', paint: GROUP_PAINT.trimmer },
-  { key: 'looped', name: 'Looped', paint: GROUP_PAINT.looper },
-  { key: 'liquid', name: 'Liquid', paint: 'rgb(33 25 17 / 0.55)' },
-  { key: 'sold', name: 'Sold on DEX', paint: 'var(--color-seal)' },
-  { key: 'moved', name: 'Moved out', paint: GROUP_PAINT.mover },
-  { key: 'left', name: 'Left the wallet', paint: GROUP_PAINT.left },
-  { key: 'unknown', name: 'Not read yet', paint: 'hatch' },
+const OUTCOME: ReadonlyArray<{ key: keyof BondOutcome; name: string; paint: string; term: GlossaryId }> = [
+  { key: 'vesting', name: 'Vesting', paint: GROUP_PAINT.new, term: 'outcomeVesting' },
+  { key: 'staked', name: 'Staked', paint: GROUP_PAINT.strong, term: 'outcomeStaked' },
+  { key: 'wrapped', name: 'Wrapped', paint: GROUP_PAINT.trimmer, term: 'outcomeWrapped' },
+  { key: 'looped', name: 'Looped', paint: GROUP_PAINT.looper, term: 'outcomeLooped' },
+  { key: 'liquid', name: 'Liquid', paint: 'rgb(33 25 17 / 0.55)', term: 'outcomeLiquid' },
+  { key: 'sold', name: 'Sold on DEX', paint: 'var(--color-seal)', term: 'outcomeSold' },
+  { key: 'moved', name: 'Moved out', paint: GROUP_PAINT.mover, term: 'outcomeMoved' },
+  { key: 'left', name: 'Left the wallet', paint: GROUP_PAINT.left, term: 'outcomeLeft' },
+  { key: 'unknown', name: 'Not read yet', paint: 'hatch', term: 'outcomeUnread' },
 ]
 const KEPT = ['vesting', 'staked', 'wrapped', 'looped', 'liquid'] as const
 
@@ -161,12 +185,14 @@ export function BondsPanel({
       ? GROUP_ORDER.filter((group) => rows.some((row) => row.byGroup[group] > 0)).map((group) => ({
           key: group,
           name: GROUP_INFO[group].name,
+          term: GROUP_TERM[group],
           paint: GROUP_PAINT[group],
           value: (row: EpochRow) => row.byGroup[group],
         }))
       : SOURCES.filter((src) => rows.some((row) => row.bySource[src] > 0)).map((src) => ({
           key: String(src),
           name: SOURCE_NAME[src],
+          term: SOURCE_TERM[src],
           paint: SOURCE_PAINT[src],
           value: (row: EpochRow) => row.bySource[src],
         }))
@@ -271,9 +297,15 @@ export function BondsPanel({
       {...head}
       fresh={
         <Fresh state="live" stale={error !== null || failed.length > 0}>
-          {`${error ? `Updated ${formatClock(feed.fetchedAt)} · showing the last saved copy.` : `Onchain reading · updated ${formatClock(feed.fetchedAt)}`}${
-            feed.labelsReadThrough ? ` · labels through ${DAY.format(Date.parse(feed.labelsReadThrough))}` : ''
-          }`}
+          <span>
+            {error ? `Updated ${formatClock(feed.fetchedAt)} · showing the last saved copy.` : `Onchain reading · updated ${formatClock(feed.fetchedAt)}`}
+            {feed.labelsReadThrough ? (
+              <>
+                {' · '}
+                <Hint id="labelsThrough">labels through</Hint> {DAY.format(Date.parse(feed.labelsReadThrough))}
+              </>
+            ) : null}
+          </span>
         </Fresh>
       }
       answer={outcome ? `${bondHeadline(summary)} ${outcome}` : bondHeadline(summary)}
@@ -298,6 +330,7 @@ export function BondsPanel({
         <KpiRow cols={4}>
           <Kpi
             label={`This epoch · ${current.epoch}`}
+            term={['epoch', 'epochCap']}
             value={
               <>
                 {fixed(current.sold, 0)}
@@ -310,14 +343,20 @@ export function BondsPanel({
                   <Progress value={current.fill} label={`Epoch ${current.epoch}: share of the depository cap sold`} />
                 </div>
                 <div className="mt-1">
-                  {current.soldOut
-                    ? current.soldOutAfter === null
-                      ? 'Sold out'
-                      : `Sold out after ${duration(current.soldOutAfter)}`
-                    : `Closes in ${duration(current.closesAt - tickNow)}`}
+                  {current.soldOut ? (
+                    current.soldOutAfter === null ? (
+                      <Hint id="soldOut">Sold out</Hint>
+                    ) : (
+                      <>
+                        <Hint id={['soldOut', 'sellOutTime']}>Sold out after</Hint> {duration(current.soldOutAfter)}
+                      </>
+                    )
+                  ) : (
+                    `Closes in ${duration(current.closesAt - tickNow)}`
+                  )}
                 </div>
                 <div>
-                  Bond price {fixed(bondPrice, 2)}
+                  <Hint id="bondPrice">Bond price</Hint> {fixed(bondPrice, 2)}
                   {discount === null ? '' : ` · ${formatRatio(Math.abs(discount))} ${discount >= 0 ? 'under' : 'over'} TWAP ${fixed(twap, 2)}`}
                 </div>
               </>
@@ -325,6 +364,7 @@ export function BondsPanel({
           />
           <Kpi
             label={`Bonded · ${span}`}
+            term="bonded"
             value={
               <>
                 {fixed(totals.net, 0)}
@@ -335,6 +375,7 @@ export function BondsPanel({
           />
           <Kpi
             label={`Minted vs desk stock · ${span}`}
+            term="mintedVsDeskStock"
             value={
               <>
                 {fixed(summary.minted, 0)}
@@ -349,6 +390,7 @@ export function BondsPanel({
           />
           <Kpi
             label={`Sleeve buyback · ${span}`}
+            term="sleeveBuyback"
             value={
               buyback.net > 0 ? (
                 <>
@@ -370,7 +412,9 @@ export function BondsPanel({
       </div>
 
       <div className={cx(CARD, 'mt-5')}>
-        <p className={CARD_TITLE}>What buyers did with the NET · {span}</p>
+        <p className={CARD_TITLE}>
+          <Hint id="outcome">What buyers did with the NET</Hint> · {span}
+        </p>
         <OutcomeBar outcome={summary.outcome} total={totals.net} />
         <p className="mt-2 text-xs leading-snug text-muted">
           {hasDex
@@ -384,7 +428,7 @@ export function BondsPanel({
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="min-w-0 flex-1 basis-72">
             <p className={CARD_TITLE}>
-              Bonded NET per epoch · {epochs.length} epochs from {DAY_TIME.format(new Date(epochs[0].opensAt * 1000))}
+              <Hint id="bondChart">Bonded NET per epoch</Hint> · {epochs.length} epochs from {DAY_TIME.format(new Date(epochs[0].opensAt * 1000))}
             </p>
             <p className="mt-1 text-[13px] leading-snug text-ink">{chartLine(summary)}</p>
           </div>
@@ -403,20 +447,27 @@ export function BondsPanel({
               </svg>
               Price
             </button>
+            <Hint id="priceOverlay" />
           </div>
         </div>
         <ul className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-muted">
           {legend.map((item) => (
             <li key={item.key} className="inline-flex items-center gap-1.5">
               <Swatch paint={item.paint} />
-              {item.name}
+              <Hint id={item.term}>{item.name}</Hint>
               <span className="num font-semibold text-ink">{formatRatio(item.share)}</span>
             </li>
           ))}
           <li className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="h-px w-3 bg-ink/75" />
-            Depository cap
+            <Hint id="epochCap">Depository cap</Hint>
           </li>
+          {markers.some((marker) => marker.epoch >= epochs[0].epoch && marker.epoch <= epochs[epochs.length - 1].epoch) ? (
+            <li className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="h-3 w-0 border-l-[1.5px] border-dashed border-seal" />
+              <Hint id="chartMarkers">Desk markers</Hint>
+            </li>
+          ) : null}
         </ul>
         <BondChart
           key={period}
@@ -434,14 +485,16 @@ export function BondsPanel({
 
       <div className="mt-5 grid gap-5 *:min-w-0 lg:grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)]">
         <div>
-          <p className={SUBHEAD}>Buyer groups · {span}</p>
+          <p className={SUBHEAD}>
+            <Hint id="buyerGroup">Buyer groups</Hint> · {span}
+          </p>
           <GroupTable summary={summary} hasDex={hasDex} />
         </div>
         <div>
           <p className={SUBHEAD}>Nansen labels · {span}</p>
           <CohortList cohorts={cohorts} />
           <p className="mt-2 text-[13px] leading-snug text-ink">
-            Nansen smart money: {formatRatio(cohorts.smart.share)} of bonded NET, {walletCount(cohorts.smart.wallets)}.
+            <Hint id="smartMoney">Nansen smart money</Hint>: {formatRatio(cohorts.smart.share)} of bonded NET, {walletCount(cohorts.smart.wallets)}.
           </p>
         </div>
       </div>
@@ -458,12 +511,14 @@ export function BondsPanel({
                 <th className={cx(TH, 'text-right')}>Bonded</th>
                 <th className={cx(TH, 'text-right')}>Share</th>
                 <th className={cx(TH, 'text-right')}>Epochs</th>
-                <th className={cx(TH, 'text-right')}>First bond</th>
-                <th className={TH} title="Where the wallet's bonded NET is now, all time: vesting, staked, wrapped, looped, liquid, sold on the DEX, moved out">
-                  Now
+                <th className={cx(TH, 'text-right')}>
+                  <Hint id="firstBond">First bond</Hint>
                 </th>
-                <th className={cx(TH, 'text-right')} title={`NET sold on the DEX, ${span} (Nansen)`}>
-                  DEX sold
+                <th className={TH}>
+                  <Hint id="nowBar">Now</Hint>
+                </th>
+                <th className={cx(TH, 'text-right')}>
+                  <Hint id="dexSold">DEX sold</Hint>
                 </th>
               </tr>
             </thead>
@@ -522,7 +577,11 @@ export function BondsPanel({
             {dynamics.map((line) => (
               <li key={line} className="flex gap-2">
                 <span aria-hidden="true" className="mt-[0.5em] size-1 flex-none rounded-full bg-gold-ink" />
-                {line}
+                <span>
+                  {line}
+                  {/* ponytail: matched on bondDynamics' wording; give its lines a term if more of them need hints. */}
+                  {line.endsWith('in the first minute.') ? <Hint id="firstMinuteShare" /> : null}
+                </span>
               </li>
             ))}
           </ul>
@@ -553,9 +612,9 @@ function Swatch({ paint }: { paint: string }) {
 
 function GroupName({ group }: { group: BondGroup }) {
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-ink" title={GROUP_INFO[group].info}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-ink">
       <Swatch paint={GROUP_PAINT[group]} />
-      {GROUP_INFO[group].name}
+      <Hint id={GROUP_TERM[group]}>{GROUP_INFO[group].name}</Hint>
     </span>
   )
 }
@@ -581,7 +640,7 @@ function OutcomeBar({ outcome, total }: { outcome: BondOutcome; total: number })
         {parts.map((part) => (
           <li key={part.key} className={cx('inline-flex items-center gap-1.5', part.key === 'sold' && 'text-seal')}>
             <Swatch paint={part.paint} />
-            {part.name}
+            <Hint id={part.term}>{part.name}</Hint>
             <span className={cx('num font-semibold', part.key === 'sold' ? 'text-seal' : 'text-ink')}>{formatRatio(part.net / total)}</span>
             <span className="num">{fixed(part.net, 0)} NET</span>
           </li>
@@ -603,20 +662,17 @@ function GroupTable({ summary, hasDex }: { summary: BondSummary; hasDex: boolean
             <th className={cx(TH, 'text-right')}>Wallets</th>
             <th className={cx(TH, 'text-right')}>Bonded</th>
             <th className={TH}>Share</th>
-            <th className={cx(TH, 'text-right')} title="USDG per NET the group paid in the window">
-              Avg price
+            <th className={cx(TH, 'text-right')}>
+              <Hint id="avgPrice">Avg price</Hint>
             </th>
-            <th className={cx(TH, 'text-right')} title="Share of the group's bonded NET sold on the DEX (Nansen, since launch)">
-              Sold
+            <th className={cx(TH, 'text-right')}>
+              <Hint id="groupSold">Sold</Hint>
             </th>
-            <th className={cx(TH, 'text-right')} title="Share of the group's bonded NET still in the wallet: vesting, staked, wrapped, looped, or liquid">
-              Still held
+            <th className={cx(TH, 'text-right')}>
+              <Hint id="stillHeld">Still held</Hint>
             </th>
-            <th
-              className={cx(TH, 'text-right')}
-              title="All time: DEX sell proceeds minus the bond cost of the NET sold. A wallet that also bought NET on the DEX counts those sells too."
-            >
-              Realized PnL
+            <th className={cx(TH, 'text-right')}>
+              <Hint id="realizedPnl">Realized PnL</Hint>
             </th>
           </tr>
         </thead>
@@ -635,7 +691,7 @@ function GroupTable({ summary, hasDex }: { summary: BondSummary; hasDex: boolean
                 <td className={TD}>
                   <span className="inline-flex items-center gap-1.5 font-semibold text-ink">
                     <Swatch paint={GROUP_PAINT[group]} />
-                    {GROUP_INFO[group].name}
+                    <Hint id={GROUP_TERM[group]}>{GROUP_INFO[group].name}</Hint>
                   </span>
                   <span className="mt-0.5 block text-[11.5px] leading-snug font-medium text-muted">{GROUP_INFO[group].info}</span>
                 </td>
@@ -673,7 +729,9 @@ function CohortList({ cohorts }: { cohorts: BondSummary['cohorts'] }) {
       {keys.map((cohort) => (
         <li key={cohort} className="num grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-1.5">
           <span className="min-w-0">
-            <span className="block truncate text-ink">{COHORT_LABEL[cohort]}</span>
+            <span className="block truncate text-ink">
+              <Hint id={COHORT_TERM[cohort]}>{COHORT_LABEL[cohort]}</Hint>
+            </span>
             <span className="mt-1 block h-1 overflow-hidden rounded-full bg-[rgb(74_47_29/0.1)]">
               <span className="block h-full rounded-full bg-ink/70" style={{ width: `${lead > 0 ? (cohorts[cohort].share / lead) * 100 : 0}%` }} />
             </span>
@@ -721,12 +779,21 @@ function epochStatus(row: EpochRow, open: boolean, closesAt: number, now: number
   return row.sold > 0 ? 'Did not sell out' : 'No depository bonds'
 }
 
-function chartLine(summary: BondSummary): string {
+function chartLine(summary: BondSummary): ReactNode {
   if (summary.epochsInWindow === 0) return 'No epoch has closed in this window yet.'
-  const parts = [`The depository cap filled in ${summary.soldOutCount} of ${summary.epochsInWindow} epochs.`]
-  if (summary.medianSoldOutAfter !== null) parts.push(`Median sell-out: ${duration(summary.medianSoldOutAfter)}.`)
-  if (summary.fromInventory > 0) parts.push(`Bond desks sold ${fixed(summary.fromInventory, 0)} NET more, outside the cap.`)
-  return parts.join(' ')
+  const median = summary.medianSoldOutAfter
+  return (
+    <>
+      The depository cap filled in {summary.soldOutCount} of {summary.epochsInWindow} epochs.
+      {median === null ? null : (
+        <>
+          {' '}
+          <Hint id="sellOutTime">Median sell-out</Hint>: {duration(median)}.
+        </>
+      )}
+      {summary.fromInventory > 0 ? ` Bond desks sold ${fixed(summary.fromInventory, 0)} NET more, outside the cap.` : null}
+    </>
+  )
 }
 
 const walletCount = (count: number) => `${formatCount(count)} ${count === 1 ? 'wallet' : 'wallets'}`

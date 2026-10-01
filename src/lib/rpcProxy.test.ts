@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { allow, checkBody, handleRpc } from '../../rpc.mjs'
+import { allow, checkBody, clientOf, handleRpc } from '../../rpc.mjs'
 import { chainCalls } from '../adapters/rpc.ts'
 
 const call = (method: string, params: unknown[] = []) => ({ jsonrpc: '2.0', id: 0, method, params })
@@ -31,6 +31,15 @@ describe('checkBody', () => {
   })
 })
 
+describe('clientOf', () => {
+  it("keys on Railway's X-Real-IP, never on a forwarded hop the client can write", () => {
+    const socket = { remoteAddress: '10.0.0.1' }
+    const spoofed = { 'x-forwarded-for': '203.0.113.7, 100.64.0.3' }
+    expect(clientOf({ headers: { ...spoofed, 'x-real-ip': '198.51.100.4' }, socket } as never)).toBe('198.51.100.4')
+    expect(clientOf({ headers: spoofed, socket } as never)).toBe('10.0.0.1')
+  })
+})
+
 describe('allow', () => {
   it('gives each client a burst, then one request per 5 s', () => {
     const passed = Array.from({ length: 8 }, () => allow('203.0.113.9', 1_000))
@@ -53,7 +62,8 @@ describe('handleRpc', () => {
       const handlers: Record<string, (value?: unknown) => void> = {}
       const req = {
         method,
-        headers: { ...headers, 'content-length': String(body.length), 'x-forwarded-for': `198.51.100.${++client}` },
+        headers: { ...headers, 'content-length': String(body.length), 'x-real-ip': `198.51.100.${++client}` },
+        socket: {},
         on(event: string, handler: (value?: unknown) => void) {
           handlers[event] = handler
           if (event === 'end')
